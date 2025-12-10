@@ -20,7 +20,7 @@ namespace hrv
         // Jasinski et al. 2024).
         // Current heuristic: if the last step was upward and the one before that
         // was downward, treat that as an inversion.
-
+        // update skeleton code (redefine inversion) 
         double hrv_n3 = history[n - 3].rmssd_ms;
         double hrv_n2 = history[n - 2].rmssd_ms;
         double hrv_n1 = history[n - 1].rmssd_ms;
