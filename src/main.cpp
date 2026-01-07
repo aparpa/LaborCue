@@ -11,6 +11,8 @@
 // using synthetic data. This is primarily for development / testing and
 // demonstrates how the pieces of the C++ backend fit together.
 
+//test
+
 int main()
 {
     using Clock = std::chrono::system_clock;
@@ -54,5 +56,4 @@ int main()
     //  - persists nightly HRV summaries to disk or a database
     //  - exposes an API (CLI / gRPC / REST) for a mobile or web front-end.
 
-    return 0;
-}
+    retu
