@@ -1,0 +1,431 @@
+/**
+ * Labor Cue App - Setup Screen
+ * 
+ * This screen is shown on first app launch to collect initial user information:
+ * - Name (optional)
+ * - Current weeks pregnant OR expected due date
+ * - Healthcare provider information (optional)
+ * 
+ * =============================================================================
+ * TODOS FOR THIS FILE:
+ * =============================================================================
+ * 
+ * TODO [STORY-801]: Add date picker component for due date
+ *   - Priority: High
+ *   - Points: 2
+ *   - Description: Replace text input with a proper date picker using
+ *     @react-native-community/datetimepicker for better UX.
+ * 
+ * TODO [STORY-802]: Add form validation feedback
+ *   - Priority: High
+ *   - Points: 2
+ *   - Description: Show inline validation errors under each field instead
+ *     of alert dialogs. Highlight invalid fields in red.
+ * 
+ * TODO [STORY-803]: Add progress indicator for multi-step setup
+ *   - Priority: Medium
+ *   - Points: 3
+ *   - Description: Split setup into multiple steps with a progress bar
+ *     (Step 1: Basic Info, Step 2: Pregnancy Details, Step 3: Provider)
+ * 
+ * TODO [STORY-804]: Add "Skip for now" option for optional fields
+ *   - Priority: Low
+ *   - Points: 1
+ *   - Description: Make it clearer that name and provider are optional
+ *     with a "Skip" button that advances to the next section.
+ * 
+ * TODO [STORY-805]: Implement data pre-population from health apps
+ *   - Priority: Low
+ *   - Points: 5
+ *   - Description: Offer to import pregnancy data from Apple Health or
+ *     Google Fit if available.
+ * 
+ * TODO [STORY-806]: Add keyboard avoiding behavior improvements
+ *   - Priority: Medium
+ *   - Points: 2
+ *   - Description: Ensure the form scrolls properly when keyboard opens,
+ *     keeping the active input visible.
+ * 
+ * =============================================================================
+ */
+
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+} from 'react-native';
+import { useUser } from '../context/UserContext';
+import {
+  calculatePregnancyStartDate,
+  calculateDueDate,
+  calculateStartDateFromDueDate,
+  parseFlexibleDate,
+} from '../utils/dateUtils';
+import { createNewProfile } from '../services/storage';
+import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, MINIMUM_TRACKING_WEEK } from '../constants';
+
+type SetupMethod = 'weeks' | 'dueDate';
+
+export default function SetupScreen(): JSX.Element {
+  const [name, setName] = useState('');
+  const [setupMethod, setSetupMethod] = useState<SetupMethod>('weeks');
+  const [weeksPregnant, setWeeksPregnant] = useState('');
+  const [daysPregnant, setDaysPregnant] = useState('');
+  const [dueDateInput, setDueDateInput] = useState('');
+  const [providerName, setProviderName] = useState('');
+  const [providerContact, setProviderContact] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const { setProfile, completeSetup } = useUser();
+  
+  function validateInputs(): boolean {
+    if (setupMethod === 'weeks') {
+      const weeks = parseInt(weeksPregnant, 10);
+      if (isNaN(weeks) || weeks < 1 || weeks > 42) {
+        Alert.alert('Invalid Input', 'Please enter weeks between 1 and 42.');
+        return false;
+      }
+      
+      const days = daysPregnant ? parseInt(daysPregnant, 10) : 0;
+      if (days < 0 || days > 6) {
+        Alert.alert('Invalid Input', 'Days should be between 0 and 6.');
+        return false;
+      }
+      
+      if (weeks < MINIMUM_TRACKING_WEEK) {
+        Alert.alert(
+          'Early Pregnancy',
+          `This app is designed for tracking from week ${MINIMUM_TRACKING_WEEK} onwards. ` +
+          `You can still set up now, but HRV tracking will begin at week ${MINIMUM_TRACKING_WEEK}.`
+        );
+      }
+    } else {
+      const parsedDate = parseFlexibleDate(dueDateInput);
+      if (!parsedDate) {
+        Alert.alert('Invalid Date', 'Please enter a valid due date (MM/DD/YYYY).');
+        return false;
+      }
+      
+      if (parsedDate < new Date()) {
+        Alert.alert('Invalid Date', 'Due date cannot be in the past.');
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+  async function handleSubmit(): Promise<void> {
+    if (!validateInputs()) return;
+    
+    setIsSubmitting(true);
+    
+    try {
+      let pregnancyStartDate: string;
+      let estimatedDueDate: string;
+      
+      if (setupMethod === 'weeks') {
+        const weeks = parseInt(weeksPregnant, 10);
+        const days = daysPregnant ? parseInt(daysPregnant, 10) : 0;
+        pregnancyStartDate = calculatePregnancyStartDate(weeks, days);
+        estimatedDueDate = calculateDueDate(pregnancyStartDate);
+      } else {
+        const parsedDate = parseFlexibleDate(dueDateInput)!;
+        estimatedDueDate = parsedDate.toISOString();
+        pregnancyStartDate = calculateStartDateFromDueDate(estimatedDueDate);
+      }
+      
+      const profile = createNewProfile(
+        pregnancyStartDate,
+        estimatedDueDate,
+        name || undefined
+      );
+      
+      if (providerName || providerContact) {
+        profile.healthcareProvider = {
+          name: providerName,
+          contact: providerContact,
+        };
+      }
+      
+      await setProfile(profile);
+      completeSetup();
+    } catch (error) {
+      console.error('Setup failed:', error);
+      Alert.alert('Error', 'Failed to save your information. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+  
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Let's Get Started</Text>
+          <Text style={styles.subtitle}>
+            Enter your pregnancy information to begin tracking your HRV patterns.
+          </Text>
+        </View>
+        
+        {/* Name Input (Optional) */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Your Name (optional)</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Enter your name"
+            placeholderTextColor={COLORS.textSecondary}
+          />
+        </View>
+        
+        {/* Pregnancy Timing Section */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Pregnancy Information</Text>
+          
+          {/* Toggle between weeks and due date */}
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                setupMethod === 'weeks' && styles.toggleButtonActive,
+              ]}
+              onPress={() => setSetupMethod('weeks')}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  setupMethod === 'weeks' && styles.toggleTextActive,
+                ]}
+              >
+                Weeks Pregnant
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                setupMethod === 'dueDate' && styles.toggleButtonActive,
+              ]}
+              onPress={() => setSetupMethod('dueDate')}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  setupMethod === 'dueDate' && styles.toggleTextActive,
+                ]}
+              >
+                Due Date
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Conditional inputs based on method */}
+          {setupMethod === 'weeks' ? (
+            <View style={styles.weeksContainer}>
+              <View style={styles.weekInput}>
+                <Text style={styles.inputLabel}>Weeks</Text>
+                <TextInput
+                  style={styles.input}
+                  value={weeksPregnant}
+                  onChangeText={setWeeksPregnant}
+                  placeholder="24"
+                  placeholderTextColor={COLORS.textSecondary}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+              </View>
+              <View style={styles.dayInput}>
+                <Text style={styles.inputLabel}>Days (0-6)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={daysPregnant}
+                  onChangeText={setDaysPregnant}
+                  placeholder="0"
+                  placeholderTextColor={COLORS.textSecondary}
+                  keyboardType="number-pad"
+                  maxLength={1}
+                />
+              </View>
+            </View>
+          ) : (
+            <View>
+              <Text style={styles.inputLabel}>Expected Due Date</Text>
+              <TextInput
+                style={styles.input}
+                value={dueDateInput}
+                onChangeText={setDueDateInput}
+                placeholder="MM/DD/YYYY"
+                placeholderTextColor={COLORS.textSecondary}
+              />
+            </View>
+          )}
+        </View>
+        
+        {/* Healthcare Provider (Optional) */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Healthcare Provider (optional)</Text>
+          <Text style={styles.helperText}>
+            Add your provider's info to easily share data later.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={providerName}
+            onChangeText={setProviderName}
+            placeholder="Provider name"
+            placeholderTextColor={COLORS.textSecondary}
+          />
+          <TextInput
+            style={[styles.input, styles.inputMarginTop]}
+            value={providerContact}
+            onChangeText={setProviderContact}
+            placeholder="Phone or email"
+            placeholderTextColor={COLORS.textSecondary}
+            keyboardType="email-address"
+          />
+        </View>
+        
+        {/* Submit Button */}
+        <TouchableOpacity
+          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={isSubmitting}
+        >
+          <Text style={styles.submitButtonText}>
+            {isSubmitting ? 'Setting Up...' : 'Start Tracking'}
+          </Text>
+        </TouchableOpacity>
+        
+        {/* Disclaimer */}
+        <Text style={styles.disclaimer}>
+          This app is for informational purposes only and does not provide medical advice. 
+          Always consult with your healthcare provider.
+        </Text>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  scrollContent: {
+    padding: SPACING.lg,
+  },
+  header: {
+    marginBottom: SPACING.xl,
+  },
+  title: {
+    fontSize: FONT_SIZES.title,
+    fontWeight: 'bold',
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.sm,
+  },
+  subtitle: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.textSecondary,
+    lineHeight: 22,
+  },
+  section: {
+    marginBottom: SPACING.xl,
+  },
+  label: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.sm,
+  },
+  inputLabel: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.xs,
+  },
+  helperText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.md,
+  },
+  input: {
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.textPrimary,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  inputMarginTop: {
+    marginTop: SPACING.md,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    marginBottom: SPACING.md,
+  },
+  toggleButton: {
+    flex: 1,
+    padding: SPACING.md,
+    alignItems: 'center',
+    backgroundColor: COLORS.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  toggleButtonActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  toggleText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  toggleTextActive: {
+    color: COLORS.textLight,
+  },
+  weeksContainer: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+  },
+  weekInput: {
+    flex: 2,
+  },
+  dayInput: {
+    flex: 1,
+  },
+  submitButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.lg,
+    alignItems: 'center',
+    marginTop: SPACING.lg,
+  },
+  submitButtonDisabled: {
+    backgroundColor: COLORS.neutral,
+  },
+  submitButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '600',
+  },
+  disclaimer: {
+    marginTop: SPACING.xl,
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+});
