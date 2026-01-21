@@ -82,10 +82,12 @@ export default function SetupScreen(): JSX.Element {
   const [providerName, setProviderName] = useState('');
   const [providerContact, setProviderContact] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // STORY-805 start: load health app data here and prefill relevant fields.
   
   const { setProfile, completeSetup } = useUser();
   
   function validateInputs(): boolean {
+    // STORY-802 start: replace Alert-based validation with inline field errors.
     if (setupMethod === 'weeks') {
       const weeks = parseInt(weeksPregnant, 10);
       if (isNaN(weeks) || weeks < 1 || weeks > 42) {
@@ -170,10 +172,13 @@ export default function SetupScreen(): JSX.Element {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* STORY-806 start: improve keyboard handling (scroll to focused input,
+          adjust offsets per platform). */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* STORY-803 start: insert multi-step progress UI here. */}
         <View style={styles.header}>
           <Text style={styles.title}>Let's Get Started</Text>
           <Text style={styles.subtitle}>
@@ -184,6 +189,7 @@ export default function SetupScreen(): JSX.Element {
         {/* Name Input (Optional) */}
         <View style={styles.section}>
           <Text style={styles.label}>Your Name (optional)</Text>
+          {/* STORY-804 start: add a "Skip" action for optional fields here. */}
           <TextInput
             style={styles.input}
             value={name}
@@ -191,6 +197,7 @@ export default function SetupScreen(): JSX.Element {
             placeholder="Enter your name"
             placeholderTextColor={COLORS.textSecondary}
           />
+          {/* STORY-802 start: show inline validation feedback below this input. */}
         </View>
         
         {/* Pregnancy Timing Section */}
@@ -247,6 +254,7 @@ export default function SetupScreen(): JSX.Element {
                   keyboardType="number-pad"
                   maxLength={2}
                 />
+                {/* STORY-802 start: show weeks validation error here. */}
               </View>
               <View style={styles.dayInput}>
                 <Text style={styles.inputLabel}>Days (0-6)</Text>
@@ -259,11 +267,13 @@ export default function SetupScreen(): JSX.Element {
                   keyboardType="number-pad"
                   maxLength={1}
                 />
+                {/* STORY-802 start: show days validation error here. */}
               </View>
             </View>
           ) : (
             <View>
               <Text style={styles.inputLabel}>Expected Due Date</Text>
+              {/* STORY-801 start: replace this TextInput with a date picker. */}
               <TextInput
                 style={styles.input}
                 value={dueDateInput}
@@ -271,6 +281,7 @@ export default function SetupScreen(): JSX.Element {
                 placeholder="MM/DD/YYYY"
                 placeholderTextColor={COLORS.textSecondary}
               />
+              {/* STORY-802 start: show due date validation error here. */}
             </View>
           )}
         </View>
@@ -281,6 +292,7 @@ export default function SetupScreen(): JSX.Element {
           <Text style={styles.helperText}>
             Add your provider's info to easily share data later.
           </Text>
+          {/* STORY-804 start: add a "Skip" action for provider info here. */}
           <TextInput
             style={styles.input}
             value={providerName}

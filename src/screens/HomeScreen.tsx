@@ -94,6 +94,7 @@ export default function HomeScreen(): JSX.Element {
   const [refreshing, setRefreshing] = React.useState(false);
   
   const onRefresh = React.useCallback(async () => {
+    // STORY-901 start: trigger haptic feedback when refresh begins.
     setRefreshing(true);
     await refreshData();
     setRefreshing(false);
@@ -121,14 +122,17 @@ export default function HomeScreen(): JSX.Element {
         <Text style={styles.gestationalText}>
           You are {gestationalAge} pregnant
         </Text>
+        {/* STORY-907 start: insert milestone celebration UI near gestational age. */}
         {profile?.estimatedDueDate && (
           <Text style={styles.dueDateText}>
             Due date: {formatDate(profile.estimatedDueDate)} ({getTimeUntil(profile.estimatedDueDate)})
           </Text>
         )}
+        {/* STORY-905 start: show first-time user tooltips/coach marks here. */}
       </View>
       
       {/* Main Status Card */}
+      {/* STORY-902 start: animate status card transitions when analysisResult changes. */}
       <StatusCard
         inversionStatus={analysisResult?.inversionStatus ?? InversionStatus.INSUFFICIENT_DATA}
         message={analysisResult?.message ?? 'Collecting data...'}
@@ -143,6 +147,7 @@ export default function HomeScreen(): JSX.Element {
           <TrendIndicator
             trend={analysisResult?.currentTrend ?? 'insufficient_data'}
           />
+          {/* STORY-903 start: add a mini sparkline chart alongside trend info. */}
           {latestReading && (
             <View style={styles.latestReading}>
               <Text style={styles.latestValue}>{latestReading.hrvValue.toFixed(1)} ms</Text>
@@ -150,6 +155,7 @@ export default function HomeScreen(): JSX.Element {
               <Text style={styles.latestDate}>
                 {formatDate(latestReading.timestamp, 'MMM d')}
               </Text>
+              {/* STORY-904 start: display "time since last reading" here. */}
             </View>
           )}
         </View>
@@ -194,6 +200,7 @@ export default function HomeScreen(): JSX.Element {
       )}
       
       {/* View Data Button */}
+      {/* STORY-906 start: add quick action buttons above or below this CTA. */}
       <TouchableOpacity
         style={styles.viewDataButton}
         onPress={() => navigation.navigate('Data')}

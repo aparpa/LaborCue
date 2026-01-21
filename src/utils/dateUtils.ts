@@ -41,6 +41,9 @@ import {
 } from 'date-fns';
 import { FULL_TERM_WEEKS } from '../constants';
 
+// STORY-301 start: add timezone-normalization helpers here (e.g., UTC
+// start-of-day) and use them across all calculations below.
+
 /**
  * Calculate the gestational week from a pregnancy start date
  * 
@@ -272,6 +275,9 @@ export function isValidPregnancyDate(pregnancyStartDate: string | Date): boolean
   return weeks >= 0 && weeks <= 45;
 }
 
+// STORY-302 start: add a validateImportedReadingRange(...) helper here to
+// ensure imported HRV timestamps fall within the pregnancy window.
+
 /**
  * Generate an array of week labels for chart x-axis
  * 
@@ -286,6 +292,9 @@ export function generateWeekLabels(startWeek: number, endWeek: number): string[]
   }
   return labels;
 }
+
+// STORY-303 start: add milestone calculators here (trimester boundaries,
+// viability date, and key week markers) for use in UI.
 
 /**
  * Parse a date string in various formats

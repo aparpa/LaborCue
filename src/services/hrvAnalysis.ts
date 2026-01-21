@@ -82,6 +82,9 @@ import {
 } from '../constants';
 import { addWeeks, parseISO } from 'date-fns';
 
+// STORY-405 start: add Jest tests in a new `src/services/__tests__/hrvAnalysis.test.ts`
+// file and keep the core helpers exported for coverage.
+
 /**
  * Main analysis function - analyzes all HRV data and returns comprehensive results
  * 
@@ -112,6 +115,9 @@ export function analyzeHRV(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
   
+  // STORY-404 start: filter/flag outlier readings here before aggregation.
+  // STORY-403 start: normalize readings against a personal baseline here.
+
   // Calculate weekly averages for trend analysis
   const weeklyAverages = calculateWeeklyAverages(sortedReadings);
   
@@ -193,6 +199,8 @@ export function calculateWeeklyAverages(readings: HRVReading[]): HRVAggregate[] 
 /**
  * Detect the current HRV trend based on recent data
  */
+// STORY-401 start: replace this heuristic with a more robust trend
+// detection method (LOESS/change-point/etc.).
 function detectCurrentTrend(weeklyAverages: HRVAggregate[]): HRVTrend {
   if (weeklyAverages.length < 2) {
     return 'insufficient_data';
@@ -248,6 +256,8 @@ interface InversionDetectionResult {
  * An inversion is when HRV stops decreasing and starts increasing.
  * In the paper, this typically happens around 7 weeks before delivery.
  */
+// STORY-406 start: replace this inversion logic with the spline/mixed-effect
+// model from the paper, keeping the returned shape compatible.
 function detectInversion(
   weeklyAverages: HRVAggregate[],
   readings: HRVReading[]
@@ -388,6 +398,8 @@ function calculateConfidence(
 /**
  * Generate a predicted delivery window based on inversion timing
  */
+// STORY-402 start: add confidence intervals to the prediction window,
+// and expose them via HRVAnalysisResult.
 function generatePrediction(
   inversionResult: InversionDetectionResult,
   estimatedDueDate: string

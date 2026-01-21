@@ -221,8 +221,11 @@ export default function SettingsScreen(): JSX.Element {
             {profile?.healthcareProvider?.name || 'Not set'}
           </Text>
         </View>
+        {/* STORY-1104 start: add provider management UI here (list/add/edit). */}
       </View>
       
+      {/* STORY-1101 start: add device pairing/management section here. */}
+
       {/* Notifications Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Notifications</Text>
@@ -236,7 +239,10 @@ export default function SettingsScreen(): JSX.Element {
             thumbColor={notificationsEnabled ? COLORS.primary : COLORS.neutral}
           />
         </View>
+        {/* STORY-1102 start: add reminder time picker and scheduling here. */}
       </View>
+
+      {/* STORY-1105 start: add theme selection controls here. */}
       
       {/* Data Management Section */}
       <View style={styles.section}>
@@ -246,6 +252,8 @@ export default function SettingsScreen(): JSX.Element {
           <Text style={styles.settingLabel}>Total Readings</Text>
           <Text style={styles.settingValue}>{hrvReadings.length}</Text>
         </View>
+
+        {/* STORY-1109 start: add manual HRV entry form here. */}
         
         {/* Add Test Data (Development) */}
         <TouchableOpacity
@@ -255,6 +263,7 @@ export default function SettingsScreen(): JSX.Element {
           <Text style={styles.actionButtonText}>Add Sample Test Data</Text>
           <Text style={styles.actionButtonSubtext}>For testing purposes</Text>
         </TouchableOpacity>
+        {/* STORY-1106 start: add backup/restore controls here. */}
         
         {/* Clear Data */}
         <TouchableOpacity
@@ -268,6 +277,7 @@ export default function SettingsScreen(): JSX.Element {
             This cannot be undone
           </Text>
         </TouchableOpacity>
+        {/* STORY-1108 start: add account deletion flow here (confirmations). */}
       </View>
       
       {/* About Section */}
@@ -286,6 +296,8 @@ export default function SettingsScreen(): JSX.Element {
             advice, diagnosis, or treatment. Always consult with your healthcare provider.
           </Text>
         </View>
+        {/* STORY-1103 start: add privacy policy and terms links here. */}
+        {/* STORY-1107 start: add "Contact Support" action here. */}
       </View>
     </ScrollView>
   );

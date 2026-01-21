@@ -74,6 +74,8 @@ let db: SQLite.SQLiteDatabase | null = null;
 /**
  * Initialize the SQLite database and create tables if they don't exist
  */
+// STORY-503 start: add schema migration checks here (compare DATABASE_VERSION
+// and run incremental migrations before creating tables).
 export async function initializeDatabase(): Promise<void> {
   try {
     db = await SQLite.openDatabaseAsync(DATABASE_NAME);
@@ -119,6 +121,7 @@ async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 /**
  * Save the user profile to AsyncStorage
  */
+// STORY-501 start: encrypt/decrypt the user profile payload before storage.
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
   try {
     const updatedProfile: UserProfile = {
@@ -139,6 +142,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
  * Load the user profile from AsyncStorage
  * Returns null if no profile exists (first launch)
  */
+// STORY-501 start: decrypt the stored payload before JSON.parse.
 export async function loadUserProfile(): Promise<UserProfile | null> {
   try {
     const data = await AsyncStorage.getItem(StorageKeys.USER_PROFILE);
@@ -188,6 +192,8 @@ export async function isFirstLaunch(): Promise<boolean> {
 /**
  * Save a new HRV reading to the database
  */
+// STORY-501 start: encrypt sensitive HRV fields (or the entire record)
+// prior to persistence if encrypting at rest.
 export async function saveHRVReading(reading: Omit<HRVReading, 'id'>): Promise<HRVReading> {
   const database = await getDatabase();
   
@@ -224,6 +230,8 @@ export async function saveHRVReading(reading: Omit<HRVReading, 'id'>): Promise<H
 /**
  * Save multiple HRV readings at once (for batch imports)
  */
+// STORY-504 start: validate imported records, then pass them through this
+// helper to persist the batch.
 export async function saveMultipleHRVReadings(
   readings: Omit<HRVReading, 'id'>[]
 ): Promise<HRVReading[]> {
@@ -391,6 +399,8 @@ async function cleanupOldReadings(): Promise<void> {
   const count = await getHRVReadingCount();
   
   if (count > MAX_STORED_READINGS) {
+    // STORY-505 start: consider compressing or archiving old readings here
+    // instead of deleting outright.
     const toDelete = count - MAX_STORED_READINGS;
     try {
       await database.runAsync(
@@ -515,6 +525,12 @@ export async function exportDataAsCSV(): Promise<string> {
   
   return header + rows;
 }
+
+// STORY-506 start: add PDF export generation here, reusing the chart
+// rendering/data used on the Data screen.
+
+// STORY-502 start: add cloud backup upload/download helpers here (opt-in
+// flow, encryption, and restore).
 
 // ============================================================================
 // RESET/CLEAR

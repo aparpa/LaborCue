@@ -94,6 +94,8 @@ export default function DataScreen(): JSX.Element {
   const { hrvReadings, analysisResult, currentGestationalWeek } = useUser();
   const [selectedPoint, setSelectedPoint] = useState<HRVReading | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  // STORY-1004 start: add date range filter state here.
+  // STORY-1006 start: add annotation draft state here.
   
   // Prepare chart data
   const chartData = prepareChartData(hrvReadings);
@@ -155,8 +157,10 @@ export default function DataScreen(): JSX.Element {
         <Text style={styles.sectionSubtitle}>
           Tap a data point for details
         </Text>
+        {/* STORY-1004 start: render date range filter controls here. */}
         
         <View style={styles.chartContainer}>
+          {/* STORY-1001 start: enable pinch-to-zoom/pan on this chart container. */}
           <LineChart
             data={chartData}
             width={screenWidth - SPACING.lg * 2}
@@ -174,11 +178,15 @@ export default function DataScreen(): JSX.Element {
             withHorizontalLabels={true}
             fromZero={false}
           />
+          {/* STORY-1002 start: draw a smoothed trend line overlay here. */}
+          {/* STORY-1003 start: mark the inflection point on the chart here. */}
+          {/* STORY-1005 start: overlay expected vs actual comparison line here. */}
         </View>
         
         {/* Selected Point Details */}
         {selectedPoint && (
           <View style={styles.tooltipCard}>
+            {/* STORY-1008 start: reposition tooltip near the selected point. */}
             <View style={styles.tooltipHeader}>
               <Text style={styles.tooltipTitle}>Reading Details</Text>
               <TouchableOpacity onPress={() => setSelectedPoint(null)}>
@@ -211,6 +219,7 @@ export default function DataScreen(): JSX.Element {
                 </Text>
               </View>
             </View>
+            {/* STORY-1006 start: add annotation editor for this data point here. */}
           </View>
         )}
       </View>
@@ -272,6 +281,7 @@ export default function DataScreen(): JSX.Element {
               </Text>
             </View>
           </View>
+          {/* STORY-1009 start: add statistical summary panel beneath analysis. */}
         </View>
       )}
       
@@ -281,6 +291,7 @@ export default function DataScreen(): JSX.Element {
         <Text style={styles.exportDescription}>
           Share your HRV data with your healthcare provider
         </Text>
+        {/* STORY-1007 start: add a "Share Chart Image" button here. */}
         <View style={styles.exportButtons}>
           <TouchableOpacity
             style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}

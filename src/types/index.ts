@@ -34,6 +34,9 @@
 // USER & PROFILE TYPES
 // ============================================================================
 
+// STORY-101 start: add runtime validation schemas (Zod/Yup) alongside these
+// interfaces and export them from this module.
+
 /**
  * Represents the user's profile information
  * Collected during initial setup and editable in settings
@@ -156,6 +159,9 @@ export interface DateRange {
 // ============================================================================
 // UI & DISPLAY TYPES
 // ============================================================================
+
+// STORY-102 start: define locale-aware message map types and i18n keys for
+// status titles/descriptions used by UI and STATUS_MESSAGES.
 
 /**
  * Color scheme for status indicators
@@ -281,6 +287,9 @@ export interface ExportConfig {
 // ============================================================================
 // DEVICE INTEGRATION TYPES (Future)
 // ============================================================================
+
+// STORY-103 start: expand BLE data contracts here (advertising, services,
+// characteristics, and sync payload shapes).
 
 /**
  * Placeholder for future Bluetooth device integration
