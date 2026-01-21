@@ -22,7 +22,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-801 | Add date picker for due date input | 2 | High | `SetupScreen.tsx` | |
 | STORY-802 | Add inline form validation feedback | 2 | High | `SetupScreen.tsx` | |
 | STORY-601 | Add error state management to context | 3 | High | `UserContext.tsx` | |
-| STORY-1203 | Add accessibility labels to StatusCard | 2 | High | `StatusCard.tsx` | |
+| STORY-1203 | Add accessibility labels to StatusCard | 2 | High | `StatusCard.tsx` |Leah |
 
 **Sprint 1 Total: 14 points**
 
