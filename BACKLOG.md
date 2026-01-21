@@ -21,7 +21,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-405 | Create unit tests for analysis functions | 5 | High | `hrvAnalysis.ts` | |
 | STORY-801 | Add date picker for due date input | 2 | High | `SetupScreen.tsx` | Emma|
 | STORY-802 | Add inline form validation feedback | 2 | High | `SetupScreen.tsx` | |
-| STORY-601 | Add error state management to context | 3 | High | `UserContext.tsx` | |
+| STORY-601 | Add error state management to context | 3 | High | `UserContext.tsx` |Roshni |
 | STORY-1203 | Add accessibility labels to StatusCard | 2 | High | `StatusCard.tsx` |Leah |
 
 **Sprint 1 Total: 14 points**
