@@ -28,7 +28,7 @@ Before we start, here is a list of everything you will install:
 | Software | What It Does |
 |----------|--------------|
 | Git | Tracks changes to code and lets you collaborate with others |
-| Node.js | Runs JavaScript code on your computer |
+| Node.js (20 LTS) | Runs JavaScript code on your computer |
 | VS Code | The program where you write and edit code |
 | Expo Go | An app on your phone to test the Labor Cue app |
 
@@ -66,14 +66,14 @@ git --version
 
 ---
 
-### Step 1B: Install Node.js
+### Step 1B: Install Node.js (Recommended: 20 LTS)
 
 Node.js allows you to run JavaScript code on your computer. Our project uses Node.js to manage packages and run the development server.
 
 #### Windows and Mac Instructions (same for both)
 
 1. Go to https://nodejs.org
-2. You will see two download buttons. Click the one that says "LTS" (Long Term Support). This is the stable version.
+2. You will see two download buttons. Click the one that says "LTS" (Long Term Support). For this project, use Node 20 LTS.
 3. Run the downloaded file
 4. Click through the installer using the default options
 5. Finish the installation
@@ -91,7 +91,7 @@ Type the following and press Enter:
 node --version
 ```
 
-You should see a version number like "v20.11.0"
+You should see a version number like "v20.20.0"
 
 Then type:
 
@@ -99,7 +99,25 @@ Then type:
 npm --version
 ```
 
-You should see a version number like "10.2.0"
+You should see a version number like "10.8.0"
+
+### Optional: Use NVM to manage Node versions (Mac/Linux)
+
+If you already have Node installed or want to switch versions easily, use NVM.
+
+1. Install NVM:
+
+```
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+```
+
+2. Restart your terminal, then install and use Node 20:
+
+```
+nvm install 20
+nvm use 20
+nvm alias default 20
+```
 
 If both commands show version numbers, Node.js is installed correctly.
 

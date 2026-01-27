@@ -10,7 +10,7 @@ Labor Cue uses wearable-derived HRV data to monitor pregnancy health. The app tr
 
 ### Prerequisites
 
-1. **Node.js** (v18 or later): https://nodejs.org/
+1. **Node.js** (v20 LTS recommended): https://nodejs.org/
 2. **Git**: https://git-scm.com/
 3. **VS Code** (recommended): https://code.visualstudio.com/
 4. **Expo Go app** on your phone (iOS/Android)
