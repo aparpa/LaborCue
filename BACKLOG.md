@@ -130,6 +130,31 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 ---
 
+##  Unlisted Stories (From Code TODOs)
+*These stories are referenced in code comments but are not yet placed into an epic.*
+
+| Story ID | Title | Priority/Points | File |
+|----------|-------|-----------------|------|
+| STORY-101 | Validation schemas | TBD (see `src/types/index.ts`) | `src/types/index.ts` |
+| STORY-102 | Internationalization (i18n) types | TBD (see `src/types/index.ts`) | `src/types/index.ts` |
+| STORY-202 | Configurable analysis thresholds | TBD (see `src/constants/index.ts`) | `src/constants/index.ts` |
+| STORY-203 | Accessibility constants | TBD (see `src/constants/index.ts`) | `src/constants/index.ts` |
+| STORY-301 | Timezone handling | TBD (see `src/utils/dateUtils.ts`) | `src/utils/dateUtils.ts` |
+| STORY-302 | Import date range validation | TBD (see `src/utils/dateUtils.ts`) | `src/utils/dateUtils.ts` |
+| STORY-403 | Individual baseline adjustment | TBD (see `src/services/hrvAnalysis.ts`) | `src/services/hrvAnalysis.ts` |
+| STORY-404 | Outlier detection | TBD (see `src/services/hrvAnalysis.ts`) | `src/services/hrvAnalysis.ts` |
+| STORY-503 | Data migrations | TBD (see `src/services/storage.ts`) | `src/services/storage.ts` |
+| STORY-505 | Data compression | TBD (see `src/services/storage.ts`) | `src/services/storage.ts` |
+| STORY-604 | Split contexts | TBD (see `src/context/UserContext.tsx`) | `src/context/UserContext.tsx` |
+| STORY-605 | Sync status indicator | TBD (see `src/context/UserContext.tsx`) | `src/context/UserContext.tsx` |
+| STORY-805 | Health app import | TBD (see `src/screens/SetupScreen.tsx`) | `src/screens/SetupScreen.tsx` |
+| STORY-901 | Pull-to-refresh haptics | TBD (see `src/screens/HomeScreen.tsx`) | `src/screens/HomeScreen.tsx` |
+| STORY-1107 | Contact support | TBD (see `src/screens/SettingsScreen.tsx`) | `src/screens/SettingsScreen.tsx` |
+| STORY-1202 | Expandable status card | TBD (see `src/components/StatusCard.tsx`) | `src/components/StatusCard.tsx` |
+| STORY-1301 | Animated trend arrow | TBD (see `src/components/TrendIndicator.tsx`) | `src/components/TrendIndicator.tsx` |
+
+---
+
 ##  Story Point Summary
 
 | Epic | Total Points | Story Count |
