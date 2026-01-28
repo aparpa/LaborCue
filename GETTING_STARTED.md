@@ -119,6 +119,34 @@ nvm use 20
 nvm alias default 20
 ```
 
+### Optional: Use NVM for Windows (nvm-windows)
+
+If npm is not working on Windows, use **nvm-windows** to manage Node versions.
+
+**Beginner note:** npm comes with Node.js. NVM is a separate tool that lets you install and switch between Node versions. If Node is installed correctly, npm should work automatically. Use NVM when you need to fix or switch Node versions.
+
+1. Download the latest installer from:
+   https://github.com/coreybutler/nvm-windows/releases
+2. Run the installer and restart your terminal.
+3. Install and use Node 20:
+
+```
+nvm install 20
+nvm use 20
+node -v
+```
+
+You should see a version like `v20.20.0`.
+
+#### After installing Node with nvm-windows
+
+```
+npm install
+npm run verify
+```
+
+If `npm run verify` passes, your setup is working.
+
 If both commands show version numbers, Node.js is installed correctly.
 
 ---

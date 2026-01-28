@@ -30,6 +30,63 @@ npx expo start
 # 4. Scan the QR code with Expo Go (Android) or Camera (iOS)
 ```
 
+### Testing (Quick Guide)
+
+If you only read one section about testing, use this one and follow the checklist in `TESTING_CHECKLIST.md`.
+
+Where to look:
+- `TESTING_CHECKLIST.md` for the pre‑PR checklist
+- `tests/README.md` for how to write a test
+- `tests/services/hrvAnalysis.test.ts` for a working example
+
+How to run tests:
+
+**macOS / Linux**
+```
+npm run verify
+```
+
+**Windows (PowerShell or CMD)**
+```
+npm run verify
+```
+
+How to read results:
+- **Pass**: output shows `PASS tests/...` and `0 failed`
+- **Fail**: output shows `FAIL tests/...` and error details
+
+### Node Version Manager (Windows + Mac/Linux)
+
+If npm is not working or you need to switch Node versions, use a Node version manager.
+
+**Windows (nvm-windows)**
+- Download the installer: https://github.com/coreybutler/nvm-windows/releases
+- Install Node 20:
+```
+nvm install 20
+nvm use 20
+node -v
+```
+ - Install dependencies and run tests:
+```
+npm install
+npm run verify
+```
+
+**macOS / Linux (nvm)**
+```
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+nvm install 20
+nvm use 20
+nvm alias default 20
+node -v
+```
+Then:
+```
+npm install
+npm run verify
+```
+
 ### VS Code Extensions (Recommended)
 
 - ES7+ React/Redux/React-Native snippets
