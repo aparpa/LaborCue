@@ -31,7 +31,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 ### Sprint 2
 
 | Story ID | Title | Points | Priority | File | Assignee |
-|----------|-------|--------|----------|------|----------|
+|----------|-------|--------|----------|------|Roshni|
 | STORY-401 | Implement sophisticated trend detection | 8 | High | `hrvAnalysis.ts` | |
 | STORY-904 | Time since last reading indicator | 2 | High | `HomeScreen.tsx` | |
 | STORY-1001 | Pinch-to-zoom on chart | 5 | High | `DataScreen.tsx` | |
