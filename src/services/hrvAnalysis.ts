@@ -73,14 +73,26 @@ import {
   MINIMUM_DATA_POINTS_FOR_TREND,
   MINIMUM_DATA_POINTS_FOR_INVERSION,
   CONSECUTIVE_READINGS_FOR_TREND_CHANGE,
-  ROLLING_AVERAGE_WINDOW_DAYS,
-  SIGNIFICANT_CHANGE_THRESHOLD,
   EXPECTED_INFLECTION_WEEK,
   WEEKS_BEFORE_DELIVERY_INFLECTION,
   STATUS_MESSAGES,
   FULL_TERM_WEEKS
 } from '../constants';
 import { addWeeks, parseISO } from 'date-fns';
+
+// Internal tuning constants for trend/inversion detection
+const SMOOTHING_WINDOW_POINTS = 3;
+const RECENT_TREND_WINDOW_POINTS = 14;           // ~2 weeks of nightly data
+const INVERSION_RECENT_WINDOW_POINTS = 14;       // window to check for positive slope
+const INVERSION_PERSISTENCE_POINTS = 7;          // require ~2 weeks of positive run (assuming q2n)
+const MIN_R2_FOR_TREND = 0.15;
+const MIN_NORMALIZED_SLOPE = 0.003;              // ~0.3% change per point
+
+interface SmoothedPoint {
+  value: number;
+  timestamp: string;
+  gestationalWeek: number;
+}
 
 // STORY-405 start: add Jest tests in a new `src/services/__tests__/hrvAnalysis.test.ts`
 // file and keep the core helpers exported for coverage.
@@ -117,15 +129,15 @@ export function analyzeHRV(
   
   // STORY-404 start: filter/flag outlier readings here before aggregation.
   // STORY-403 start: normalize readings against a personal baseline here.
-
-  // Calculate weekly averages for trend analysis
-  const weeklyAverages = calculateWeeklyAverages(sortedReadings);
+  
+  // Smooth nightly readings for trend analysis
+  const smoothedReadings = buildSmoothedSeries(sortedReadings, SMOOTHING_WINDOW_POINTS);
   
   // Determine current trend
-  const currentTrend = detectCurrentTrend(weeklyAverages);
+  const currentTrend = detectCurrentTrend(smoothedReadings);
   
   // Detect if an inversion has occurred
-  const inversionResult = detectInversion(weeklyAverages, sortedReadings);
+  const inversionResult = detectInversion(sortedReadings, smoothedReadings);
   
   // Determine the status based on inversion timing
   const status = determineStatus(inversionResult, estimatedDueDate);
@@ -199,44 +211,19 @@ export function calculateWeeklyAverages(readings: HRVReading[]): HRVAggregate[] 
 /**
  * Detect the current HRV trend based on recent data
  */
-// STORY-401 start: replace this heuristic with a more robust trend
-// detection method (LOESS/change-point/etc.).
-function detectCurrentTrend(weeklyAverages: HRVAggregate[]): HRVTrend {
-  if (weeklyAverages.length < 2) {
+function detectCurrentTrend(smoothedReadings: SmoothedPoint[]): HRVTrend {
+  if (smoothedReadings.length < 2) {
     return 'insufficient_data';
   }
   
-  // Look at the last few weeks
-  const recentWeeks = weeklyAverages.slice(-CONSECUTIVE_READINGS_FOR_TREND_CHANGE);
+  const window = smoothedReadings.slice(-RECENT_TREND_WINDOW_POINTS);
   
-  if (recentWeeks.length < 2) {
+  if (window.length < 2) {
     return 'insufficient_data';
   }
   
-  // Calculate trend direction
-  let increasingCount = 0;
-  let decreasingCount = 0;
-  
-  for (let i = 1; i < recentWeeks.length; i++) {
-    const change = recentWeeks[i].averageHRV - recentWeeks[i - 1].averageHRV;
-    const percentChange = Math.abs(change) / recentWeeks[i - 1].averageHRV;
-    
-    if (percentChange >= SIGNIFICANT_CHANGE_THRESHOLD) {
-      if (change > 0) {
-        increasingCount++;
-      } else {
-        decreasingCount++;
-      }
-    }
-  }
-  
-  if (increasingCount > decreasingCount && increasingCount >= 2) {
-    return 'increasing';
-  } else if (decreasingCount > increasingCount && decreasingCount >= 2) {
-    return 'decreasing';
-  }
-  
-  return 'stable';
+  const regression = computeRegression(window);
+  return slopeToTrend(regression.slope, regression.r2, window);
 }
 
 /**
@@ -259,8 +246,8 @@ interface InversionDetectionResult {
 // STORY-406 start: replace this inversion logic with the spline/mixed-effect
 // model from the paper, keeping the returned shape compatible.
 function detectInversion(
-  weeklyAverages: HRVAggregate[],
-  readings: HRVReading[]
+  readings: HRVReading[],
+  smoothedReadings: SmoothedPoint[]
 ): InversionDetectionResult {
   const noInversion: InversionDetectionResult = {
     inversionDetected: false,
@@ -270,74 +257,54 @@ function detectInversion(
     trendAfterInversion: null
   };
   
-  if (weeklyAverages.length < 4) {
+  if (smoothedReadings.length < MINIMUM_DATA_POINTS_FOR_INVERSION) {
     return noInversion;
   }
   
-  // Look for the point where trend changes from decreasing to increasing
-  let potentialInversionIndex = -1;
+  const longTermRegression = computeRegression(smoothedReadings);
+  const recentWindow = smoothedReadings.slice(-INVERSION_RECENT_WINDOW_POINTS);
+  const recentRegression = computeRegression(recentWindow);
   
-  for (let i = 2; i < weeklyAverages.length - 1; i++) {
-    // Check if previous weeks were decreasing
-    const prevDecreasing = 
-      weeklyAverages[i - 2].averageHRV > weeklyAverages[i - 1].averageHRV &&
-      weeklyAverages[i - 1].averageHRV > weeklyAverages[i].averageHRV;
-    
-    // Check if following weeks are increasing
-    const nextIncreasing = 
-      weeklyAverages[i].averageHRV < weeklyAverages[i + 1].averageHRV;
-    
-    if (prevDecreasing && nextIncreasing) {
-      potentialInversionIndex = i;
-      break;
-    }
-  }
+  const longTermTrend = slopeToTrend(longTermRegression.slope, longTermRegression.r2, smoothedReadings);
+  const recentTrend = slopeToTrend(recentRegression.slope, recentRegression.r2, recentWindow);
   
-  if (potentialInversionIndex === -1) {
+  const recentPositiveRun = getPositiveRunLength(smoothedReadings);
+  const hasPersistentPositiveRun = recentPositiveRun >= INVERSION_PERSISTENCE_POINTS - 1;
+  
+  const longTermMean = computeMean(smoothedReadings.map(p => p.value));
+  const recentMean = computeMean(recentWindow.map(p => p.value));
+  const longTermNormalizedSlope = normalizeSlope(longTermRegression.slope, longTermMean);
+  const recentNormalizedSlope = normalizeSlope(recentRegression.slope, recentMean);
+  
+  const looksLikeInversion =
+    longTermTrend === 'decreasing' &&
+    recentTrend === 'increasing' &&
+    recentNormalizedSlope > MIN_NORMALIZED_SLOPE &&
+    longTermNormalizedSlope < -MIN_NORMALIZED_SLOPE &&
+    hasPersistentPositiveRun;
+  
+  if (!looksLikeInversion) {
     return noInversion;
   }
   
-  const inversionWeek = weeklyAverages[potentialInversionIndex].gestationalWeek;
+  const inversionStartIndex = smoothedReadings.length - (INVERSION_PERSISTENCE_POINTS - 1);
+  const inversionWeek =
+    readings[inversionStartIndex]?.gestationalWeek ??
+    smoothedReadings[inversionStartIndex - 1]?.gestationalWeek ??
+    null;
   
-  // Calculate confidence based on how clear the trend change is
-  const beforeSlope = calculateSlope(weeklyAverages.slice(0, potentialInversionIndex + 1));
-  const afterSlope = calculateSlope(weeklyAverages.slice(potentialInversionIndex));
-  
-  let confidence = 0;
-  if (beforeSlope < 0 && afterSlope > 0) {
-    // Clear inversion - negative slope before, positive after
-    confidence = Math.min(1, (Math.abs(beforeSlope) + Math.abs(afterSlope)) / 2);
-  }
+  const confidence = clamp01(
+    recentRegression.r2 * 0.6 +
+    (recentPositiveRun / INVERSION_PERSISTENCE_POINTS) * 0.4
+  );
   
   return {
     inversionDetected: true,
     inversionWeek,
     confidence,
-    trendBeforeInversion: beforeSlope < 0 ? 'decreasing' : 'stable',
-    trendAfterInversion: afterSlope > 0 ? 'increasing' : 'stable'
+    trendBeforeInversion: longTermTrend === 'decreasing' ? 'decreasing' : 'stable',
+    trendAfterInversion: 'increasing'
   };
-}
-
-/**
- * Calculate the slope of HRV trend over a series of weekly averages
- * Negative slope = decreasing, Positive slope = increasing
- */
-function calculateSlope(averages: HRVAggregate[]): number {
-  if (averages.length < 2) return 0;
-  
-  // Simple linear regression
-  const n = averages.length;
-  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-  
-  for (let i = 0; i < n; i++) {
-    sumX += i;
-    sumY += averages[i].averageHRV;
-    sumXY += i * averages[i].averageHRV;
-    sumX2 += i * i;
-  }
-  
-  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-  return slope;
 }
 
 /**
@@ -496,4 +463,119 @@ export function getStatusSummary(result: HRVAnalysisResult): string {
     : 'More data is needed';
     
   return `${trendText}. ${result.message}`;
+}
+
+/**
+ * Build a smoothed nightly series using a trailing window average
+ */
+function buildSmoothedSeries(
+  readings: HRVReading[],
+  windowSize: number
+): SmoothedPoint[] {
+  if (readings.length === 0) {
+    return [];
+  }
+  
+  const smoothedValues = calculateRollingAverage(readings, windowSize);
+  
+  return smoothedValues.map((value, index) => ({
+    value,
+    timestamp: readings[index].timestamp,
+    gestationalWeek: readings[index].gestationalWeek
+  }));
+}
+
+/**
+ * Compute linear regression slope and r2 for a series of smoothed points
+ */
+function computeRegression(points: SmoothedPoint[]): { slope: number; r2: number } {
+  if (points.length < 2) {
+    return { slope: 0, r2: 0 };
+  }
+  
+  const n = points.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumX2 = 0;
+  
+  for (let i = 0; i < n; i++) {
+    const x = i;
+    const y = points[i].value;
+    sumX += x;
+    sumY += y;
+    sumXY += x * y;
+    sumX2 += x * x;
+  }
+  
+  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  
+  // Calculate r-squared
+  const meanY = sumY / n;
+  let ssTot = 0;
+  let ssRes = 0;
+  
+  for (let i = 0; i < n; i++) {
+    const x = i;
+    const y = points[i].value;
+    const predicted = (slope * x) + (sumY - slope * sumX) / n;
+    ssTot += Math.pow(y - meanY, 2);
+    ssRes += Math.pow(y - predicted, 2);
+  }
+  
+  const r2 = ssTot === 0 ? 0 : 1 - ssRes / ssTot;
+  
+  return { slope, r2 };
+}
+
+/**
+ * Convert slope and r2 into a trend classification
+ */
+function slopeToTrend(
+  slope: number,
+  r2: number,
+  window: SmoothedPoint[]
+): HRVTrend {
+  const mean = computeMean(window.map(p => p.value));
+  const normalizedSlope = normalizeSlope(slope, mean);
+  
+  if (window.length < CONSECUTIVE_READINGS_FOR_TREND_CHANGE) {
+    return 'insufficient_data';
+  }
+  
+  if (Math.abs(normalizedSlope) < MIN_NORMALIZED_SLOPE || r2 < MIN_R2_FOR_TREND) {
+    return 'stable';
+  }
+  
+  return normalizedSlope > 0 ? 'increasing' : 'decreasing';
+}
+
+/**
+ * Count the trailing positive differences to ensure persistence
+ */
+function getPositiveRunLength(points: SmoothedPoint[]): number {
+  let run = 0;
+  for (let i = points.length - 1; i > 0; i--) {
+    const delta = points[i].value - points[i - 1].value;
+    if (delta > 0) {
+      run++;
+    } else {
+      break;
+    }
+  }
+  return run;
+}
+
+function normalizeSlope(slope: number, mean: number): number {
+  if (mean === 0) return slope;
+  return slope / Math.abs(mean);
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function computeMean(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
