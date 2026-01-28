@@ -30,30 +30,15 @@ npx expo start
 # 4. Scan the QR code with Expo Go (Android) or Camera (iOS)
 ```
 
-### Testing (Quick Guide)
+### Testing (Start Here)
 
-If you only read one section about testing, use this one and follow the checklist in `TESTING_CHECKLIST.md`.
+If you only read one testing document, read `TESTING.md`.
 
-Where to look:
-- `TESTING_CHECKLIST.md` for the pre‑PR checklist
-- `tests/README.md` for how to write a test
-- `tests/services/hrvAnalysis.test.ts` for a working example
-
-How to run tests:
-
-**macOS / Linux**
-```
-npm run verify
-```
-
-**Windows (PowerShell or CMD)**
-```
-npm run verify
-```
-
-How to read results:
-- **Pass**: output shows `PASS tests/...` and `0 failed`
-- **Fail**: output shows `FAIL tests/...` and error details
+It explains:
+- what tests are
+- how to write them
+- how to run them on Windows and macOS/Linux
+- how to tell if they passed or failed
 
 ### Node Version Manager (Windows + Mac/Linux)
 

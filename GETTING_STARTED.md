@@ -556,34 +556,11 @@ This uploads your branch to GitHub.
 
 ## Testing Basics (Read This Before Opening a PR)
 
-You should run tests before opening a pull request. Tests are small scripts that verify expected behavior.
-
-### Where tests live
-
-Look in `tests/` for examples. Start with `tests/README.md` and `tests/services/hrvAnalysis.test.ts`.
-
-### How to write a test (simple pattern)
-
-1. Arrange sample data or props
-2. Act by calling a function or rendering a component
-3. Assert using `expect(...)`
-
-### How to run tests
-
-```
-npm test
-```
-
-Or run the full checklist (lint + tests):
-
-```
-npm run verify
-```
-
-### How to know if it passed
-
-- **Pass**: output shows `PASS tests/...` and the summary says `0 failed`.
-- **Fail**: output shows `FAIL tests/...` and displays the error details.
+Use the single testing guide at `TESTING.md`. It covers:
+- what tests are
+- how to write them
+- how to run them on Windows and macOS/Linux
+- how to read pass/fail output
 
 ---
 
