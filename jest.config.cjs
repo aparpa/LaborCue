@@ -6,4 +6,6 @@ module.exports = {
     '**/?(*.)+(spec|test).[tj]s?(x)'
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'html'],
 };
