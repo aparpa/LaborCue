@@ -52,6 +52,7 @@ import React, {
   useState, 
   useEffect, 
   useCallback,
+  useMemo,
   ReactNode 
 } from 'react';
 import {
@@ -97,6 +98,9 @@ interface UserContextType {
   // Computed values
   currentGestationalWeek: number;
   currentGestationalDay: number;
+  
+  // Error handling
+  errorMessage: string | null;
 }
 
 // Default context value (used before initialization)
@@ -112,7 +116,8 @@ const defaultContext: UserContextType = {
   refreshData: async () => {},
   completeSetup: () => {},
   currentGestationalWeek: 0,
-  currentGestationalDay: 0
+  currentGestationalDay: 0,
+  errorMessage: null
 };
 
 // ============================================================================
@@ -151,6 +156,11 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [hrvReadings, setHrvReadings] = useState<HRVReading[]>([]);
   const [analysisResult, setAnalysisResult] = useState<HRVAnalysisResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  // Show a warning when we go a full night without any readings
+  const HOURS_WITHOUT_READING_FOR_WARNING = 24;
+  const NO_DATA_WARNING_MESSAGE = 'Warning: no HRV data detected';
   
   // Computed values
   const currentGestationalWeek = profile 
@@ -164,6 +174,29 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
   const latestReading = hrvReadings.length > 0 
     ? hrvReadings[hrvReadings.length - 1] 
     : null;
+  
+  const shouldWarnForMissingReadings = useCallback((): boolean => {
+    if (isLoading || isFirstLaunch) {
+      return false;
+    }
+    
+    const now = Date.now();
+    const hoursSince = (timestamp: number): number =>
+      (now - timestamp) / (1000 * 60 * 60);
+    
+    if (!latestReading) {
+      if (!profile?.createdAt) {
+        return false;
+      }
+      return hoursSince(new Date(profile.createdAt).getTime()) >= HOURS_WITHOUT_READING_FOR_WARNING;
+    }
+    
+    return hoursSince(new Date(latestReading.timestamp).getTime()) >= HOURS_WITHOUT_READING_FOR_WARNING;
+  }, [HOURS_WITHOUT_READING_FOR_WARNING, isFirstLaunch, isLoading, latestReading, profile]);
+  
+  useEffect(() => {
+    setErrorMessage(shouldWarnForMissingReadings() ? NO_DATA_WARNING_MESSAGE : null);
+  }, [NO_DATA_WARNING_MESSAGE, shouldWarnForMissingReadings]);
   
   // ============================================================================
   // INITIALIZATION
@@ -281,6 +314,28 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
     setIsFirstLaunch(false);
   }, []);
   
+  const analysisResultWithError = useMemo<HRVAnalysisResult | null>(() => {
+    if (errorMessage) {
+      const baseResult = analysisResult ?? {
+        currentTrend: 'insufficient_data' as const,
+        inversionStatus: InversionStatus.INSUFFICIENT_DATA,
+        confidence: 'none' as const,
+        lastAnalyzedAt: new Date().toISOString(),
+        message: NO_DATA_WARNING_MESSAGE
+      };
+      
+      return {
+        ...baseResult,
+        inversionStatus: InversionStatus.INSUFFICIENT_DATA,
+        confidence: 'none',
+        message: NO_DATA_WARNING_MESSAGE,
+        recommendation: undefined
+      };
+    }
+    
+    return analysisResult;
+  }, [NO_DATA_WARNING_MESSAGE, analysisResult, errorMessage]);
+  
   // ============================================================================
   // CONTEXT VALUE
   // ============================================================================
@@ -291,13 +346,14 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
     isLoading,
     hrvReadings,
     latestReading,
-    analysisResult,
+    analysisResult: analysisResultWithError,
     setProfile,
     addHRVReading,
     refreshData,
     completeSetup,
     currentGestationalWeek,
-    currentGestationalDay
+    currentGestationalDay,
+    errorMessage
   };
   
   return (
