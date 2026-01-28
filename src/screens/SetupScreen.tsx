@@ -59,7 +59,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { useUser } from '../context/UserContext';
 import {
@@ -73,6 +72,12 @@ import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, MINIMUM_TRACKING_WEEK } fro
 
 type SetupMethod = 'weeks' | 'dueDate';
 
+type Errors = {
+  weeks?: string;
+  days?: string;
+  dueDate?: string;
+};
+
 export default function SetupScreen(): JSX.Element {
   const [name, setName] = useState('');
   const [setupMethod, setSetupMethod] = useState<SetupMethod>('weeks');
@@ -81,58 +86,51 @@ export default function SetupScreen(): JSX.Element {
   const [dueDateInput, setDueDateInput] = useState('');
   const [providerName, setProviderName] = useState('');
   const [providerContact, setProviderContact] = useState('');
+  const [errors, setErrors] = useState<Errors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // STORY-805 start: load health app data here and prefill relevant fields.
-  
+
   const { setProfile, completeSetup } = useUser();
-  
-  function validateInputs(): boolean {
-    // STORY-802 start: replace Alert-based validation with inline field errors.
+
+  const validate = (): boolean => {
+    const nextErrors: Errors = {};
+
     if (setupMethod === 'weeks') {
       const weeks = parseInt(weeksPregnant, 10);
-      if (isNaN(weeks) || weeks < 1 || weeks > 42) {
-        Alert.alert('Invalid Input', 'Please enter weeks between 1 and 42.');
-        return false;
-      }
-      
       const days = daysPregnant ? parseInt(daysPregnant, 10) : 0;
-      if (days < 0 || days > 6) {
-        Alert.alert('Invalid Input', 'Days should be between 0 and 6.');
-        return false;
+
+      if (isNaN(weeks) || weeks < 1 || weeks > 42) {
+        nextErrors.weeks = 'Weeks must be between 1 and 42';
       }
-      
-      if (weeks < MINIMUM_TRACKING_WEEK) {
-        Alert.alert(
-          'Early Pregnancy',
-          `This app is designed for tracking from week ${MINIMUM_TRACKING_WEEK} onwards. ` +
-          `You can still set up now, but HRV tracking will begin at week ${MINIMUM_TRACKING_WEEK}.`
-        );
+
+      if (days < 0 || days > 6) {
+        nextErrors.days = 'Days must be between 0 and 6';
+      }
+
+      if (!isNaN(weeks) && weeks < MINIMUM_TRACKING_WEEK) {
+        // soft warning, no block
       }
     } else {
       const parsedDate = parseFlexibleDate(dueDateInput);
       if (!parsedDate) {
-        Alert.alert('Invalid Date', 'Please enter a valid due date (MM/DD/YYYY).');
-        return false;
-      }
-      
-      if (parsedDate < new Date()) {
-        Alert.alert('Invalid Date', 'Due date cannot be in the past.');
-        return false;
+        nextErrors.dueDate = 'Enter a valid date (MM/DD/YYYY)';
+      } else if (parsedDate < new Date()) {
+        nextErrors.dueDate = 'Due date cannot be in the past';
       }
     }
-    
-    return true;
-  }
-  
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
   async function handleSubmit(): Promise<void> {
-    if (!validateInputs()) return;
-    
+    if (!validate()) return;
+
     setIsSubmitting(true);
-    
+
     try {
       let pregnancyStartDate: string;
       let estimatedDueDate: string;
-      
+
       if (setupMethod === 'weeks') {
         const weeks = parseInt(weeksPregnant, 10);
         const days = daysPregnant ? parseInt(daysPregnant, 10) : 0;
@@ -143,53 +141,40 @@ export default function SetupScreen(): JSX.Element {
         estimatedDueDate = parsedDate.toISOString();
         pregnancyStartDate = calculateStartDateFromDueDate(estimatedDueDate);
       }
-      
+
       const profile = createNewProfile(
         pregnancyStartDate,
         estimatedDueDate,
         name || undefined
       );
-      
+
       if (providerName || providerContact) {
         profile.healthcareProvider = {
           name: providerName,
           contact: providerContact,
         };
       }
-      
+
       await setProfile(profile);
       completeSetup();
-    } catch (error) {
-      console.error('Setup failed:', error);
-      Alert.alert('Error', 'Failed to save your information. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   }
-  
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* STORY-806 start: improve keyboard handling (scroll to focused input,
-          adjust offsets per platform). */}
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* STORY-803 start: insert multi-step progress UI here. */}
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.title}>Let's Get Started</Text>
-          <Text style={styles.subtitle}>
-            Enter your pregnancy information to begin tracking your HRV patterns.
-          </Text>
+          <Text style={styles.subtitle}>Enter your pregnancy information to begin tracking.</Text>
         </View>
-        
-        {/* Name Input (Optional) */}
+
         <View style={styles.section}>
           <Text style={styles.label}>Your Name (optional)</Text>
-          {/* STORY-804 start: add a "Skip" action for optional fields here. */}
           <TextInput
             style={styles.input}
             value={name}
@@ -197,247 +182,127 @@ export default function SetupScreen(): JSX.Element {
             placeholder="Enter your name"
             placeholderTextColor={COLORS.textSecondary}
           />
-          {/* STORY-802 start: show inline validation feedback below this input. */}
         </View>
-        
-        {/* Pregnancy Timing Section */}
+
         <View style={styles.section}>
           <Text style={styles.label}>Pregnancy Information</Text>
-          
-          {/* Toggle between weeks and due date */}
+
           <View style={styles.toggleContainer}>
             <TouchableOpacity
-              style={[
-                styles.toggleButton,
-                setupMethod === 'weeks' && styles.toggleButtonActive,
-              ]}
-              onPress={() => setSetupMethod('weeks')}
+              style={[styles.toggleButton, setupMethod === 'weeks' && styles.toggleButtonActive]}
+              onPress={() => {
+                setSetupMethod('weeks');
+                setErrors({});
+              }}
             >
-              <Text
-                style={[
-                  styles.toggleText,
-                  setupMethod === 'weeks' && styles.toggleTextActive,
-                ]}
-              >
+              <Text style={[styles.toggleText, setupMethod === 'weeks' && styles.toggleTextActive]}>
                 Weeks Pregnant
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
-                styles.toggleButton,
-                setupMethod === 'dueDate' && styles.toggleButtonActive,
-              ]}
-              onPress={() => setSetupMethod('dueDate')}
+              style={[styles.toggleButton, setupMethod === 'dueDate' && styles.toggleButtonActive]}
+              onPress={() => {
+                setSetupMethod('dueDate');
+                setErrors({});
+              }}
             >
-              <Text
-                style={[
-                  styles.toggleText,
-                  setupMethod === 'dueDate' && styles.toggleTextActive,
-                ]}
-              >
+              <Text style={[styles.toggleText, setupMethod === 'dueDate' && styles.toggleTextActive]}>
                 Due Date
               </Text>
             </TouchableOpacity>
           </View>
-          
-          {/* Conditional inputs based on method */}
+
           {setupMethod === 'weeks' ? (
             <View style={styles.weeksContainer}>
               <View style={styles.weekInput}>
                 <Text style={styles.inputLabel}>Weeks</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, errors.weeks && styles.inputError]}
                   value={weeksPregnant}
-                  onChangeText={setWeeksPregnant}
-                  placeholder="24"
-                  placeholderTextColor={COLORS.textSecondary}
+                  onChangeText={(v) => {
+                    setWeeksPregnant(v);
+                    setErrors((e) => ({ ...e, weeks: undefined }));
+                  }}
                   keyboardType="number-pad"
                   maxLength={2}
                 />
-                {/* STORY-802 start: show weeks validation error here. */}
+                {errors.weeks && <Text style={styles.errorText}>{errors.weeks}</Text>}
               </View>
+
               <View style={styles.dayInput}>
-                <Text style={styles.inputLabel}>Days (0-6)</Text>
+                <Text style={styles.inputLabel}>Days (0–6)</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, errors.days && styles.inputError]}
                   value={daysPregnant}
-                  onChangeText={setDaysPregnant}
-                  placeholder="0"
-                  placeholderTextColor={COLORS.textSecondary}
+                  onChangeText={(v) => {
+                    setDaysPregnant(v);
+                    setErrors((e) => ({ ...e, days: undefined }));
+                  }}
                   keyboardType="number-pad"
                   maxLength={1}
                 />
-                {/* STORY-802 start: show days validation error here. */}
+                {errors.days && <Text style={styles.errorText}>{errors.days}</Text>}
               </View>
             </View>
           ) : (
             <View>
               <Text style={styles.inputLabel}>Expected Due Date</Text>
-              {/* STORY-801 start: replace this TextInput with a date picker. */}
               <TextInput
-                style={styles.input}
+                style={[styles.input, errors.dueDate && styles.inputError]}
                 value={dueDateInput}
-                onChangeText={setDueDateInput}
+                onChangeText={(v) => {
+                  setDueDateInput(v);
+                  setErrors((e) => ({ ...e, dueDate: undefined }));
+                }}
                 placeholder="MM/DD/YYYY"
                 placeholderTextColor={COLORS.textSecondary}
               />
-              {/* STORY-802 start: show due date validation error here. */}
+              {errors.dueDate && <Text style={styles.errorText}>{errors.dueDate}</Text>}
             </View>
           )}
         </View>
-        
-        {/* Healthcare Provider (Optional) */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Healthcare Provider (optional)</Text>
-          <Text style={styles.helperText}>
-            Add your provider's info to easily share data later.
-          </Text>
-          {/* STORY-804 start: add a "Skip" action for provider info here. */}
-          <TextInput
-            style={styles.input}
-            value={providerName}
-            onChangeText={setProviderName}
-            placeholder="Provider name"
-            placeholderTextColor={COLORS.textSecondary}
-          />
-          <TextInput
-            style={[styles.input, styles.inputMarginTop]}
-            value={providerContact}
-            onChangeText={setProviderContact}
-            placeholder="Phone or email"
-            placeholderTextColor={COLORS.textSecondary}
-            keyboardType="email-address"
-          />
-        </View>
-        
-        {/* Submit Button */}
+
         <TouchableOpacity
           style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
           onPress={handleSubmit}
           disabled={isSubmitting}
         >
-          <Text style={styles.submitButtonText}>
-            {isSubmitting ? 'Setting Up...' : 'Start Tracking'}
-          </Text>
+          <Text style={styles.submitButtonText}>{isSubmitting ? 'Setting Up…' : 'Start Tracking'}</Text>
         </TouchableOpacity>
-        
-        {/* Disclaimer */}
-        <Text style={styles.disclaimer}>
-          This app is for informational purposes only and does not provide medical advice. 
-          Always consult with your healthcare provider.
-        </Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  scrollContent: {
-    padding: SPACING.lg,
-  },
-  header: {
-    marginBottom: SPACING.xl,
-  },
-  title: {
-    fontSize: FONT_SIZES.title,
-    fontWeight: 'bold',
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.sm,
-  },
-  subtitle: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.textSecondary,
-    lineHeight: 22,
-  },
-  section: {
-    marginBottom: SPACING.xl,
-  },
-  label: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.sm,
-  },
-  inputLabel: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.xs,
-  },
-  helperText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.md,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  scrollContent: { padding: SPACING.lg },
+  header: { marginBottom: SPACING.xl },
+  title: { fontSize: FONT_SIZES.title, fontWeight: 'bold', marginBottom: SPACING.sm },
+  subtitle: { fontSize: FONT_SIZES.md, color: COLORS.textSecondary },
+  section: { marginBottom: SPACING.xl },
+  label: { fontSize: FONT_SIZES.lg, fontWeight: '600', marginBottom: SPACING.sm },
+  inputLabel: { fontSize: FONT_SIZES.sm, color: COLORS.textSecondary, marginBottom: 4 },
   input: {
     backgroundColor: COLORS.backgroundSecondary,
     borderRadius: BORDER_RADIUS.md,
     padding: SPACING.md,
     fontSize: FONT_SIZES.md,
-    color: COLORS.textPrimary,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  inputMarginTop: {
-    marginTop: SPACING.md,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    marginBottom: SPACING.md,
-  },
-  toggleButton: {
-    flex: 1,
-    padding: SPACING.md,
-    alignItems: 'center',
-    backgroundColor: COLORS.backgroundSecondary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  toggleButtonActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  toggleText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  toggleTextActive: {
-    color: COLORS.textLight,
-  },
-  weeksContainer: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-  },
-  weekInput: {
-    flex: 2,
-  },
-  dayInput: {
-    flex: 1,
-  },
-  submitButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.lg,
-    alignItems: 'center',
-    marginTop: SPACING.lg,
-  },
-  submitButtonDisabled: {
-    backgroundColor: COLORS.neutral,
-  },
-  submitButtonText: {
-    color: COLORS.textLight,
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
-  },
-  disclaimer: {
-    marginTop: SPACING.xl,
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
+  inputError: { borderColor: COLORS.danger },
+  errorText: { color: COLORS.danger, fontSize: FONT_SIZES.xs, marginTop: 4 },
+  toggleContainer: { flexDirection: 'row', marginBottom: SPACING.md },
+  toggleButton: { flex: 1, padding: SPACING.md, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border },
+  toggleButtonActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  toggleText: { fontSize: FONT_SIZES.sm, color: COLORS.textSecondary },
+  toggleTextActive: { color: COLORS.textLight },
+  weeksContainer: { flexDirection: 'row', gap: SPACING.md },
+  weekInput: { flex: 2 },
+  dayInput: { flex: 1 },
+  submitButton: { backgroundColor: COLORS.primary, padding: SPACING.lg, borderRadius: BORDER_RADIUS.md, alignItems: 'center' },
+  submitButtonDisabled: { backgroundColor: COLORS.neutral },
+  submitButtonText: { color: COLORS.textLight, fontSize: FONT_SIZES.lg, fontWeight: '600' },
 });
+
