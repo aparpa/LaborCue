@@ -40,6 +40,24 @@ It explains:
 - how to run them on Windows and macOS/Linux
 - how to tell if they passed or failed
 
+### Build (What It Is and How to Run It)
+
+Building creates a production-ready bundle (for web/export) and clears old build output first.
+
+What the build scripts do:
+- `npm run clean:build` removes old `build/` and `dist/` folders
+- `npm run build` cleans and then runs `expo export`
+
+What to look for:
+- A `dist/` folder is created after a successful build
+- The terminal ends without errors
+
+How to run:
+
+```
+npm run build
+```
+
 ### Node Version Manager (Windows + Mac/Linux)
 
 If npm is not working or you need to switch Node versions, use a Node version manager.

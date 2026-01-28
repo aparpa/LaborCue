@@ -613,6 +613,16 @@ git pull origin main
 
 Fix any conflicts if they appear, then push again.
 
+### Build does not produce output
+
+Make sure you ran:
+
+```
+npm run build
+```
+
+This deletes old build output and creates a new `dist/` folder.
+
 ### Merge conflicts
 
 When Git cannot automatically combine changes, you will see conflict markers in the file:

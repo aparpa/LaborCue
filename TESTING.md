@@ -64,6 +64,14 @@ Or run the full pre-PR checks (lint + tests):
 npm run verify
 ```
 
+### Generate coverage (HTML report)
+
+```
+npm run test:coverage
+```
+
+This generates `coverage/index.html`. Open that file in a browser to see per‑file coverage.
+
 ### Windows (PowerShell or CMD)
 
 ```
@@ -75,6 +83,18 @@ Or run the full pre-PR checks:
 ```
 npm run verify
 ```
+
+### Generate coverage (HTML report)
+
+```
+npm run test:coverage
+```
+
+This generates `coverage\\index.html`. Open that file in a browser to see per‑file coverage.
+
+## Coverage cleanup (cross‑platform)
+
+Before each `npm test`, we delete the old `coverage/` folder so the report is fresh. This works on Windows, macOS, and Linux.
 
 ## How to know if tests passed or failed
 
