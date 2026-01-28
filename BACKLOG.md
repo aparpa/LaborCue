@@ -33,7 +33,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|------|
 | STORY-401 | Implement sophisticated trend detection | 8 | High | `hrvAnalysis.ts` | Roshni |
-| STORY-904 | Time since last reading indicator | 2 | High | `HomeScreen.tsx` | |
+| STORY-904 | Time since last reading indicator | 2 | High | `HomeScreen.tsx` |Leah |
 | STORY-1001 | Pinch-to-zoom on chart | 5 | High | `DataScreen.tsx` | |
 | STORY-1002 | Add trend line overlay to chart | 3 | High | `DataScreen.tsx` | |
 
