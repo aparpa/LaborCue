@@ -52,7 +52,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` | |
 | STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` | |
 | STORY-1009 | Statistical summary panel | 3 | Medium | `DataScreen.tsx` | |
-| STORY-1302 | Show percentage change in trend | 2 | Medium | `TrendIndicator.tsx` | |
+| STORY-1302 | Show percentage change in trend | 2 | Medium | `TrendIndicator.tsx` |Faduma |
 | STORY-1303 | Mini sparkline in trend indicator | 3 | Medium | `TrendIndicator.tsx` | |
 | STORY-1004 | Date range filter for chart | 3 | Medium | `DataScreen.tsx` | |
 
