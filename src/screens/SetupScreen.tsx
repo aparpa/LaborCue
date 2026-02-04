@@ -61,6 +61,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useUser } from '../context/UserContext';
 import {
   calculatePregnancyStartDate,
@@ -79,12 +80,30 @@ export default function SetupScreen(): JSX.Element {
   const [weeksPregnant, setWeeksPregnant] = useState('');
   const [daysPregnant, setDaysPregnant] = useState('');
   const [dueDateInput, setDueDateInput] = useState('');
+  const [dueDate, setDueDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [providerName, setProviderName] = useState('');
   const [providerContact, setProviderContact] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   // STORY-805 start: load health app data here and prefill relevant fields.
   
   const { setProfile, completeSetup } = useUser();
+
+  function formatDateForInput(date: Date): string {
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    const year = date.getFullYear();
+    return `${month}/${day}/${year}`;
+  }
+
+  function handleDateChange(event: DateTimePickerEvent, selectedDate?: Date): void {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    if (!selectedDate) return;
+    setDueDate(selectedDate);
+    setDueDateInput(formatDateForInput(selectedDate));
+  }
   
   function validateInputs(): boolean {
     // STORY-802 start: replace Alert-based validation with inline field errors.
@@ -274,13 +293,25 @@ export default function SetupScreen(): JSX.Element {
             <View>
               <Text style={styles.inputLabel}>Expected Due Date</Text>
               {/* STORY-801 start: replace this TextInput with a date picker. */}
-              <TextInput
+              <TouchableOpacity
                 style={styles.input}
-                value={dueDateInput}
-                onChangeText={setDueDateInput}
-                placeholder="MM/DD/YYYY"
-                placeholderTextColor={COLORS.textSecondary}
-              />
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+              >
+                <Text style={dueDateInput ? styles.dateText : styles.datePlaceholder}>
+                  {dueDateInput || 'Select a date'}
+                </Text>
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={dueDate ?? new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={new Date()}
+                  onChange={handleDateChange}
+                />
+              )}
               {/* STORY-802 start: show due date validation error here. */}
             </View>
           )}
@@ -383,6 +414,14 @@ const styles = StyleSheet.create({
   },
   inputMarginTop: {
     marginTop: SPACING.md,
+  },
+  dateText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.textPrimary,
+  },
+  datePlaceholder: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.textSecondary,
   },
   toggleContainer: {
     flexDirection: 'row',
