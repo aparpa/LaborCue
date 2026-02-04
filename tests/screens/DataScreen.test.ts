@@ -6,6 +6,9 @@ import {
 } from '../../src/utils/chartWindow';
 import type { HRVReading } from '../../src/types';
 
+/**
+ * Helper to create a minimal HRVReading for tests.
+ */
 const makeReading = (week: number, value: number, id: string): HRVReading => ({
   id,
   timestamp: '2024-01-01T00:00:00.000Z',
@@ -15,6 +18,9 @@ const makeReading = (week: number, value: number, id: string): HRVReading => ({
   source: 'manual',
 });
 
+/**
+ * Unit tests for chart window helper functions.
+ */
 describe('DataScreen chart window helpers', () => {
   it('clamps values within range', () => {
     expect(clamp(5, 0, 4)).toBe(4);
