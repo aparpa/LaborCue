@@ -73,6 +73,7 @@ import {
   MINIMUM_DATA_POINTS_FOR_TREND,
   MINIMUM_DATA_POINTS_FOR_INVERSION,
   CONSECUTIVE_READINGS_FOR_TREND_CHANGE,
+  SIGNIFICANT_CHANGE_THRESHOLD,
   EXPECTED_INFLECTION_WEEK,
   WEEKS_BEFORE_DELIVERY_INFLECTION,
   STATUS_MESSAGES,
@@ -140,7 +141,7 @@ export function analyzeHRV(
   const inversionResult = detectInversion(sortedReadings, smoothedReadings);
   
   // Determine the status based on inversion timing
-  const status = determineStatus(inversionResult, estimatedDueDate);
+  const status = determineStatus(inversionResult);
   
   // Calculate confidence level
   const confidence = calculateConfidence(readings.length, inversionResult);
@@ -311,8 +312,7 @@ function detectInversion(
  * Determine the status based on when inversion occurred relative to expected timing
  */
 function determineStatus(
-  inversionResult: InversionDetectionResult,
-  estimatedDueDate: string
+  inversionResult: InversionDetectionResult
 ): { inversionStatus: InversionStatus } {
   if (!inversionResult.inversionDetected) {
     return { inversionStatus: InversionStatus.ON_TRACK };
@@ -579,3 +579,19 @@ function computeMean(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
+
+// Expose internal helpers for targeted unit tests (non-production use).
+export const __testables = {
+  detectCurrentTrend,
+  detectInversion,
+  determineStatus,
+  calculateConfidence,
+  generatePrediction,
+  getStatusKey,
+  buildSmoothedSeries,
+  computeRegression,
+  slopeToTrend,
+  getPositiveRunLength,
+  normalizeSlope,
+  computeMean,
+};

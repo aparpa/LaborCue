@@ -37,7 +37,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import type { HRVTrend } from '../types';
-import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants';
+import { COLORS, SPACING, FONT_SIZES } from '../constants';
 
 interface TrendIndicatorProps {
   trend: HRVTrend;

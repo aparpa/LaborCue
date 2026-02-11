@@ -30,6 +30,66 @@ npx expo start
 # 4. Scan the QR code with Expo Go (Android) or Camera (iOS)
 ```
 
+### Testing (Start Here)
+
+If you only read one testing document, read `TESTING.md`.
+
+It explains:
+- what tests are
+- how to write them
+- how to run them on Windows and macOS/Linux
+- how to tell if they passed or failed
+
+### Build (What It Is and How to Run It)
+
+Building creates a production-ready bundle (for web/export) and clears old build output first.
+
+What the build scripts do:
+- `npm run clean:build` removes old `build/` and `dist/` folders
+- `npm run build` cleans and then runs `expo export`
+
+What to look for:
+- A `dist/` folder is created after a successful build
+- The terminal ends without errors
+
+How to run:
+
+```
+npm run build
+```
+
+### Node Version Manager (Windows + Mac/Linux)
+
+If npm is not working or you need to switch Node versions, use a Node version manager.
+
+**Windows (nvm-windows)**
+- Download the installer: https://github.com/coreybutler/nvm-windows/releases
+- Install Node 20:
+```
+nvm install 20
+nvm use 20
+node -v
+```
+ - Install dependencies and run tests:
+```
+npm install
+npm run verify
+```
+
+**macOS / Linux (nvm)**
+```
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+nvm install 20
+nvm use 20
+nvm alias default 20
+node -v
+```
+Then:
+```
+npm install
+npm run verify
+```
+
 ### VS Code Extensions (Recommended)
 
 - ES7+ React/Redux/React-Native snippets
