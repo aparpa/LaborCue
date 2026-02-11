@@ -1,3 +1,7 @@
+const path = require('path');
+
+const coverageDirectory = path.resolve(process.env.COVERAGE_DIR || path.join(__dirname, 'coverage'));
+
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
@@ -6,6 +10,6 @@ module.exports = {
     '**/?(*.)+(spec|test).[tj]s?(x)'
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
-  coverageDirectory: 'coverage',
+  coverageDirectory,
   coverageReporters: ['text', 'html'],
 };
