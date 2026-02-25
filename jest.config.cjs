@@ -12,4 +12,18 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   coverageDirectory,
   coverageReporters: ['text', 'html'],
+  transform: {
+    '^.+\\.(ts|tsx|js|jsx)$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          jsx: 'react',
+        },
+        isolatedModules: true,
+      },
+    ],
+  },
+  transformIgnorePatterns: [
+    'node_modules/(?!(jest-)?react-native|@react-native|@react-navigation|react-native-chart-kit|react-native-svg|@testing-library)',
+  ],
 };
