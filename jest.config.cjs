@@ -1,6 +1,5 @@
 module.exports = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
+  preset: 'react-native',
   testMatch: [
     '**/__tests__/**/*.(spec|test).[jt]s?(x)',
     '**/?(*.)+(spec|test).[tj]s?(x)'
