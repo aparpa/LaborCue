@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
   },
   statusBarBackground: {
-    height: 8,
+    height: 8,git 
     backgroundColor: COLORS.border,
     borderRadius: 4,
     overflow: 'hidden',
