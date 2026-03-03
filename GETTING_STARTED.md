@@ -119,6 +119,34 @@ nvm use 20
 nvm alias default 20
 ```
 
+### Optional: Use NVM for Windows (nvm-windows)
+
+If npm is not working on Windows, use **nvm-windows** to manage Node versions.
+
+**Beginner note:** npm comes with Node.js. NVM is a separate tool that lets you install and switch between Node versions. If Node is installed correctly, npm should work automatically. Use NVM when you need to fix or switch Node versions.
+
+1. Download the latest installer from:
+   https://github.com/coreybutler/nvm-windows/releases
+2. Run the installer and restart your terminal.
+3. Install and use Node 20:
+
+```
+nvm install 20
+nvm use 20
+node -v
+```
+
+You should see a version like `v20.20.0`.
+
+#### After installing Node with nvm-windows
+
+```
+npm install
+npm run verify
+```
+
+If `npm run verify` passes, your setup is working.
+
 If both commands show version numbers, Node.js is installed correctly.
 
 ---
@@ -526,6 +554,16 @@ This uploads your branch to GitHub.
 
 ---
 
+## Testing Basics (Read This Before Opening a PR)
+
+Use the single testing guide at `TESTING.md`. It covers:
+- what tests are
+- how to write them
+- how to run them on Windows and macOS/Linux
+- how to read pass/fail output
+
+---
+
 ## Troubleshooting Common Issues
 
 ### "command not found: git"
@@ -574,6 +612,16 @@ git pull origin main
 ```
 
 Fix any conflicts if they appear, then push again.
+
+### Build does not produce output
+
+Make sure you ran:
+
+```
+npm run build
+```
+
+This deletes old build output and creates a new `dist/` folder.
 
 ### Merge conflicts
 

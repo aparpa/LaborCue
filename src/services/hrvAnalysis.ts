@@ -73,7 +73,6 @@ import {
   MINIMUM_DATA_POINTS_FOR_TREND,
   MINIMUM_DATA_POINTS_FOR_INVERSION,
   CONSECUTIVE_READINGS_FOR_TREND_CHANGE,
-  ROLLING_AVERAGE_WINDOW_DAYS,
   SIGNIFICANT_CHANGE_THRESHOLD,
   EXPECTED_INFLECTION_WEEK,
   WEEKS_BEFORE_DELIVERY_INFLECTION,
@@ -125,10 +124,10 @@ export function analyzeHRV(
   const currentTrend = detectCurrentTrend(weeklyAverages);
   
   // Detect if an inversion has occurred
-  const inversionResult = detectInversion(weeklyAverages, sortedReadings);
+  const inversionResult = detectInversion(weeklyAverages);
   
   // Determine the status based on inversion timing
-  const status = determineStatus(inversionResult, estimatedDueDate);
+  const status = determineStatus(inversionResult);
   
   // Calculate confidence level
   const confidence = calculateConfidence(readings.length, inversionResult);
@@ -259,8 +258,7 @@ interface InversionDetectionResult {
 // STORY-406 start: replace this inversion logic with the spline/mixed-effect
 // model from the paper, keeping the returned shape compatible.
 function detectInversion(
-  weeklyAverages: HRVAggregate[],
-  readings: HRVReading[]
+  weeklyAverages: HRVAggregate[]
 ): InversionDetectionResult {
   const noInversion: InversionDetectionResult = {
     inversionDetected: false,
@@ -344,8 +342,7 @@ function calculateSlope(averages: HRVAggregate[]): number {
  * Determine the status based on when inversion occurred relative to expected timing
  */
 function determineStatus(
-  inversionResult: InversionDetectionResult,
-  estimatedDueDate: string
+  inversionResult: InversionDetectionResult
 ): { inversionStatus: InversionStatus } {
   if (!inversionResult.inversionDetected) {
     return { inversionStatus: InversionStatus.ON_TRACK };
