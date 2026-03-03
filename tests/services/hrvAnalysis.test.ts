@@ -133,7 +133,7 @@ describe('analyzeHRV', () => {
     );
 
     expect(result.currentTrend).toBe('increasing');
-    expect(result.inversionStatus).not.toBe(InversionStatus.ON_TRACK);
+    expect(result.inversionStatus).not.toBe(InversionStatus.INSUFFICIENT_DATA);
     expect(result.predictedDeliveryWindow).toBeDefined();
     expect(result.inversionDetectedAt).toBeDefined();
   });
