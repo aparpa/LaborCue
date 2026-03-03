@@ -72,7 +72,7 @@ import { useUser } from '../context/UserContext';
 import StatusCard from '../components/StatusCard';
 import TrendIndicator from '../components/TrendIndicator';
 import { formatGestationalAge, formatDate, getTimeUntil } from '../utils/dateUtils';
-import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, STATUS_COLORS } from '../constants';
+import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants';
 import { InversionStatus } from '../types';
 import type { DrawerParamList } from '../types';
 
@@ -88,7 +88,6 @@ export default function HomeScreen(): JSX.Element {
     currentGestationalDay,
     latestReading,
     refreshData,
-    isLoading,
   } = useUser();
   
   const [refreshing, setRefreshing] = React.useState(false);
@@ -102,11 +101,6 @@ export default function HomeScreen(): JSX.Element {
   
   const userName = profile?.name || 'there';
   const gestationalAge = formatGestationalAge(currentGestationalWeek, currentGestationalDay);
-  
-  // Get status colors based on analysis result
-  const statusColors = analysisResult
-    ? STATUS_COLORS[analysisResult.inversionStatus]
-    : STATUS_COLORS[InversionStatus.INSUFFICIENT_DATA];
   
   return (
     <ScrollView
