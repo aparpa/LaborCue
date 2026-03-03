@@ -126,7 +126,7 @@ export default function DataScreen(): JSX.Element {
     () => getVisibleReadings(hrvReadings, windowSize, panOffset),
     [hrvReadings, windowSize, panOffset]
   );
-  const chartData = prepareChartData(visibleReadings);
+  const { chartData } = prepareChartData(visibleReadings);
   const weeklyAverages = hrvReadings.length > 0 
     ? calculateWeeklyAverages(hrvReadings)
     : [];

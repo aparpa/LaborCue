@@ -43,6 +43,17 @@ jest.mock('react-native-svg', () => {
   };
 });
 
+// Mock gesture-handler components for non-native Jest environment.
+jest.mock('react-native-gesture-handler', () => {
+  const React = require('react');
+  const passthrough = (props: any) => React.createElement('view', props, props.children);
+  return {
+    PanGestureHandler: passthrough,
+    PinchGestureHandler: passthrough,
+    State: { END: 'END' },
+  };
+});
+
 // Mock expo-sqlite which is ESM-only and not needed for this screen test.
 jest.mock('expo-sqlite', () => ({}));
 
