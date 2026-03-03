@@ -68,7 +68,7 @@
  * =============================================================================
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -80,37 +80,64 @@ import {
   Share,
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
+import {
+  PanGestureHandler,
+  PinchGestureHandler,
+  State as GestureState,
+  PanGestureHandlerStateChangeEvent,
+  PinchGestureHandlerStateChangeEvent,
+} from 'react-native-gesture-handler';
 import { Circle, G, Line as SvgLine, Text as SvgText } from 'react-native-svg';
 
 import { useUser } from '../context/UserContext';
 import { formatDate } from '../utils/dateUtils';
+import {
+  clamp,
+  clampPanOffset,
+  getPanOffsetFromTranslation,
+  getVisibleReadings,
+  getWindowSize,
+} from '../utils/chartWindow';
 import { exportDataAsCSV, exportDataAsJSON } from '../services/storage';
 import { calculateWeeklyAverages } from '../services/hrvAnalysis';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, CHART_CONFIG } from '../constants';
 import type { HRVReading, HRVAnalysisResult } from '../types';
 
 const screenWidth = Dimensions.get('window').width;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 4;
 
 export default function DataScreen(): JSX.Element {
   const { hrvReadings, analysisResult, currentGestationalWeek } = useUser();
   const [selectedPoint, setSelectedPoint] = useState<HRVReading | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState(0);
+  const [chartWidth, setChartWidth] = useState(screenWidth - SPACING.lg * 2);
   // STORY-1004 start: add date range filter state here.
   // STORY-1006 start: add annotation draft state here.
   
   // Prepare chart data
-  const { chartData, displayReadings } = prepareChartData(hrvReadings);
+  const windowSize = useMemo(
+    () => getWindowSize(hrvReadings.length, zoomLevel),
+    [hrvReadings.length, zoomLevel]
+  );
+  const visibleReadings = useMemo(
+    () => getVisibleReadings(hrvReadings, windowSize, panOffset),
+    [hrvReadings, windowSize, panOffset]
+  );
+  const { chartData } = prepareChartData(visibleReadings);
   const weeklyAverages = hrvReadings.length > 0 
     ? calculateWeeklyAverages(hrvReadings)
     : [];
-  const inflectionPoint = getInflectionPoint(analysisResult, displayReadings);
+  const inflectionPoint = getInflectionPoint(analysisResult, visibleReadings);
   
   // Handle data point selection
   const handleDataPointClick = useCallback((data: { index: number }) => {
-    if (hrvReadings[data.index]) {
-      setSelectedPoint(hrvReadings[data.index]);
+    if (visibleReadings[data.index]) {
+      setSelectedPoint(visibleReadings[data.index]);
     }
-  }, [hrvReadings]);
+  }, [visibleReadings]);
   
   // Handle export
   const handleExport = useCallback(async (format: 'csv' | 'json') => {
@@ -130,6 +157,28 @@ export default function DataScreen(): JSX.Element {
     } finally {
       setIsExporting(false);
     }
+  }, []);
+
+  const handlePinchStateChange = useCallback((event: PinchGestureHandlerStateChangeEvent) => {
+    if (event.nativeEvent.state !== GestureState.END) return;
+    const scale = event.nativeEvent.scale || 1;
+    setZoomLevel((prev) => clamp(prev * scale, MIN_ZOOM, MAX_ZOOM));
+    setPanOffset((prev) =>
+      clampPanOffset(prev, hrvReadings.length, getWindowSize(hrvReadings.length, zoomLevel * scale))
+    );
+  }, [hrvReadings.length, zoomLevel]);
+
+  const handlePanStateChange = useCallback((event: PanGestureHandlerStateChangeEvent) => {
+    if (event.nativeEvent.state !== GestureState.END) return;
+    const translationX = event.nativeEvent.translationX || 0;
+    setPanOffset((prev) =>
+      getPanOffsetFromTranslation(translationX, chartWidth, windowSize, prev, hrvReadings.length)
+    );
+  }, [chartWidth, windowSize, hrvReadings.length]);
+
+  const resetZoom = useCallback(() => {
+    setZoomLevel(1);
+    setPanOffset(0);
   }, []);
   
   // Show empty state if no data
@@ -159,74 +208,88 @@ export default function DataScreen(): JSX.Element {
         <Text style={styles.sectionSubtitle}>
           Tap a data point for details
         </Text>
+        {(zoomLevel !== 1 || panOffset !== 0) && (
+          <TouchableOpacity style={styles.resetButton} onPress={resetZoom}>
+            <Text style={styles.resetButtonText}>Reset Zoom</Text>
+          </TouchableOpacity>
+        )}
         {/* STORY-1004 start: render date range filter controls here. */}
         
-        <View style={styles.chartContainer}>
+        <View
+          style={styles.chartContainer}
+          onLayout={(event) => setChartWidth(event.nativeEvent.layout.width)}
+        >
           {/* STORY-1001 start: enable pinch-to-zoom/pan on this chart container. */}
-          <LineChart
-            data={chartData}
-            width={screenWidth - SPACING.lg * 2}
-            height={220}
-            chartConfig={{
-              ...CHART_CONFIG,
-              decimalPlaces: 0,
-            }}
-            bezier
-            style={styles.chart}
-            onDataPointClick={handleDataPointClick}
-            withInnerLines={true}
-            withOuterLines={true}
-            withVerticalLabels={true}
-            withHorizontalLabels={true}
-            fromZero={false}
-            decorator={({ x, y, width, height }: { x: (i: number) => number; y: (v: number) => number; width: number; height: number; }) => {
-              if (!inflectionPoint) return null;
-              const { index, reading } = inflectionPoint;
-              const dataValue = chartData.datasets[0].data[index];
-              const cx = x(index);
-              const cy = y(dataValue);
+          <PinchGestureHandler onHandlerStateChange={handlePinchStateChange}>
+            <PanGestureHandler onHandlerStateChange={handlePanStateChange}>
+              <View>
+                <LineChart
+                  data={chartData}
+                  width={chartWidth}
+                  height={220}
+                  chartConfig={{
+                    ...CHART_CONFIG,
+                    decimalPlaces: 0,
+                  }}
+                  bezier
+                  style={styles.chart}
+                  onDataPointClick={handleDataPointClick}
+                  withInnerLines={true}
+                  withOuterLines={true}
+                  withVerticalLabels={true}
+                  withHorizontalLabels={true}
+                  fromZero={false}
+                  decorator={({ x, y, width, height }: { x: (i: number) => number; y: (v: number) => number; width: number; height: number; }) => {
+                    if (!inflectionPoint) return null;
+                    const { index, reading } = inflectionPoint;
+                    const dataValue = chartData.datasets[0].data[index];
+                    const cx = x(index);
+                    const cy = y(dataValue);
 
-              return (
-                <G>
-                  <SvgLine
-                    x1={cx}
-                    x2={cx}
-                    y1={0}
-                    y2={height}
-                    stroke={COLORS.chartInversion}
-                    strokeWidth={2}
-                    strokeDasharray="4 4"
-                  />
-                  <Circle
-                    cx={cx}
-                    cy={cy}
-                    r={5}
-                    fill={COLORS.chartInversion}
-                    stroke={COLORS.background}
-                    strokeWidth={1.5}
-                  />
-                  <SvgText
-                    x={cx}
-                    y={12}
-                    fontSize={10}
-                    fill={COLORS.chartInversion}
-                    textAnchor="middle"
-                  >
-                    Inflection
-                  </SvgText>
-                  <SvgText
-                    x={cx}
-                    y={24}
-                    fontSize={9}
-                    fill={COLORS.chartInversion}
-                    textAnchor="middle"
-                  >
-                    {`W${reading.gestationalWeek}`}
-                  </SvgText>
-                </G>
-              );
-            }}
-          />
+                    return (
+                      <G>
+                        <SvgLine
+                          x1={cx}
+                          x2={cx}
+                          y1={0}
+                          y2={height}
+                          stroke={COLORS.chartInversion}
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                        />
+                        <Circle
+                          cx={cx}
+                          cy={cy}
+                          r={5}
+                          fill={COLORS.chartInversion}
+                          stroke={COLORS.background}
+                          strokeWidth={1.5}
+                        />
+                        <SvgText
+                          x={cx}
+                          y={12}
+                          fontSize={10}
+                          fill={COLORS.chartInversion}
+                          textAnchor="middle"
+                        >
+                          Inflection
+                        </SvgText>
+                        <SvgText
+                          x={cx}
+                          y={24}
+                          fontSize={9}
+                          fill={COLORS.chartInversion}
+                          textAnchor="middle"
+                        >
+                          {`W${reading.gestationalWeek}`}
+                        </SvgText>
+                      </G>
+                    );
+                  }}
+                />
+              </View>
+            </PanGestureHandler>
+          </PinchGestureHandler>
           {/* STORY-1002 start: draw a smoothed trend line overlay here. */}
           {/* STORY-1003 start: mark the inflection point on the chart here. */}
           {/* STORY-1005 start: overlay expected vs actual comparison line here. */}
@@ -377,17 +440,14 @@ function prepareChartData(readings: HRVReading[]) {
       displayReadings: [],
     };
   }
-  
-  // Show last 14 readings or all if fewer
-  const displayReadings = readings.slice(-14);
-  
+
   // Create labels (gestational week)
-  const labels = displayReadings.map((r, i) => 
+  const labels = readings.map((r, i) =>
     i % 3 === 0 ? `W${r.gestationalWeek}` : ''
   );
   
   // Create data points
-  const data = displayReadings.map(r => r.hrvValue);
+  const data = readings.map(r => r.hrvValue);
   
   const chartData = {
     labels,
@@ -401,7 +461,6 @@ function prepareChartData(readings: HRVReading[]) {
 
   return {
     chartData,
-    displayReadings,
   };
 }
 
@@ -481,6 +540,19 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: COLORS.textSecondary,
     marginBottom: SPACING.md,
+  },
+  resetButton: {
+    alignSelf: 'flex-end',
+    marginBottom: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  resetButtonText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
   },
   chartContainer: {
     backgroundColor: COLORS.backgroundSecondary,
