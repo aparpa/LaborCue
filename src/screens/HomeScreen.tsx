@@ -150,6 +150,9 @@ export default function HomeScreen(): JSX.Element {
                 {formatDate(latestReading.timestamp, 'MMM d')}
               </Text>
               {/* STORY-904 start: display "time since last reading" here. */}
+              <Text style={styles.latestDate}>
+                {getTimeUntil(latestReading.timestamp)}
+              </Text>
             </View>
           )}
         </View>
