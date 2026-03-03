@@ -3,6 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "baseUrl": ".",
+    "isolatedModules": true,
     "paths": {
       "@/*": ["src/*"],
       "@components/*": ["src/components/*"],
