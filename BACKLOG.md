@@ -20,7 +20,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 |----------|-------|--------|----------|------|----------|
 | STORY-405 | Create unit tests for analysis functions | 5 | High | `hrvAnalysis.ts` | |
 | STORY-801 | Add date picker for due date input | 2 | High | `SetupScreen.tsx` | Emma|
-| STORY-802 | Add inline form validation feedback | 2 | High | `SetupScreen.tsx` |James |
+| STORY-802 | Add inline form validation feedback | 2 | High | `SetupScreen.tsx` |Emma |
 | STORY-601 | Add error state management to context | 3 | High | `UserContext.tsx` |Roshni |
 | STORY-1203 | Add accessibility labels to StatusCard | 2 | High | `StatusCard.tsx` |Leah |
 
@@ -35,7 +35,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-401 | Implement sophisticated trend detection | 8 | High | `hrvAnalysis.ts` | Roshni |
 | STORY-904 | Time since last reading indicator | 2 | High | `HomeScreen.tsx` |Leah |
 | STORY-1001 | Pinch-to-zoom on chart | 5 | High | `DataScreen.tsx` |Aditya |
-| STORY-1002 | Add trend line overlay to chart | 3 | High | `DataScreen.tsx` | |
+| STORY-1002 | Add trend line overlay to chart | 3 | High | `DataScreen.tsx` | Leah|
 
 **Sprint 2 Total: 18 points**
 
@@ -48,11 +48,11 @@ This document organizes all development tasks into an Agile-style backlog with e
 |----------|-------|--------|----------|------|----------|
 | STORY-402 | Add confidence intervals to predictions | 5 | High | `hrvAnalysis.ts` | |
 | STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | |
-| STORY-1003 | Highlight inflection point on chart | 3 | High | `DataScreen.tsx` | |
+| STORY-1003 | Highlight inflection point on chart | 3 | High | `DataScreen.tsx` |Roshni|
 | STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` | |
 | STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` | |
 | STORY-1009 | Statistical summary panel | 3 | Medium | `DataScreen.tsx` | |
-| STORY-1302 | Show percentage change in trend | 2 | Medium | `TrendIndicator.tsx` | |
+| STORY-1302 | Show percentage change in trend | 2 | Medium | `TrendIndicator.tsx` |Faduma |
 | STORY-1303 | Mini sparkline in trend indicator | 3 | Medium | `TrendIndicator.tsx` | |
 | STORY-1004 | Date range filter for chart | 3 | Medium | `DataScreen.tsx` | |
 

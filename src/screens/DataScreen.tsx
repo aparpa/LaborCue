@@ -87,12 +87,11 @@ import {
   PanGestureHandlerStateChangeEvent,
   PinchGestureHandlerStateChangeEvent,
 } from 'react-native-gesture-handler';
+import { Circle, G, Line as SvgLine, Text as SvgText } from 'react-native-svg';
 
 import { useUser } from '../context/UserContext';
 import { formatDate } from '../utils/dateUtils';
 import {
-  BASE_WINDOW,
-  MIN_WINDOW,
   clamp,
   clampPanOffset,
   getPanOffsetFromTranslation,
@@ -102,7 +101,7 @@ import {
 import { exportDataAsCSV, exportDataAsJSON } from '../services/storage';
 import { calculateWeeklyAverages } from '../services/hrvAnalysis';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, CHART_CONFIG } from '../constants';
-import type { HRVReading } from '../types';
+import type { HRVReading, HRVAnalysisResult } from '../types';
 
 const screenWidth = Dimensions.get('window').width;
 const MIN_ZOOM = 0.5;
@@ -131,6 +130,7 @@ export default function DataScreen(): JSX.Element {
   const weeklyAverages = hrvReadings.length > 0 
     ? calculateWeeklyAverages(hrvReadings)
     : [];
+  const inflectionPoint = getInflectionPoint(analysisResult, visibleReadings);
   
   // Handle data point selection
   const handleDataPointClick = useCallback((data: { index: number }) => {
@@ -239,6 +239,53 @@ export default function DataScreen(): JSX.Element {
                   withVerticalLabels={true}
                   withHorizontalLabels={true}
                   fromZero={false}
+                  decorator={({ x, y, width, height }: { x: (i: number) => number; y: (v: number) => number; width: number; height: number; }) => {
+                    if (!inflectionPoint) return null;
+                    const { index, reading } = inflectionPoint;
+                    const dataValue = chartData.datasets[0].data[index];
+                    const cx = x(index);
+                    const cy = y(dataValue);
+
+                    return (
+                      <G>
+                        <SvgLine
+                          x1={cx}
+                          x2={cx}
+                          y1={0}
+                          y2={height}
+                          stroke={COLORS.chartInversion}
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                        />
+                        <Circle
+                          cx={cx}
+                          cy={cy}
+                          r={5}
+                          fill={COLORS.chartInversion}
+                          stroke={COLORS.background}
+                          strokeWidth={1.5}
+                        />
+                        <SvgText
+                          x={cx}
+                          y={12}
+                          fontSize={10}
+                          fill={COLORS.chartInversion}
+                          textAnchor="middle"
+                        >
+                          Inflection
+                        </SvgText>
+                        <SvgText
+                          x={cx}
+                          y={24}
+                          fontSize={9}
+                          fill={COLORS.chartInversion}
+                          textAnchor="middle"
+                        >
+                          {`W${reading.gestationalWeek}`}
+                        </SvgText>
+                      </G>
+                    );
+                  }}
                 />
               </View>
             </PanGestureHandler>
@@ -386,8 +433,11 @@ export default function DataScreen(): JSX.Element {
 function prepareChartData(readings: HRVReading[]) {
   if (readings.length === 0) {
     return {
-      labels: [],
-      datasets: [{ data: [0] }],
+      chartData: {
+        labels: [],
+        datasets: [{ data: [0] }],
+      },
+      displayReadings: [],
     };
   }
 
@@ -399,7 +449,7 @@ function prepareChartData(readings: HRVReading[]) {
   // Create data points
   const data = readings.map(r => r.hrvValue);
   
-  return {
+  const chartData = {
     labels,
     datasets: [{
       data,
@@ -408,6 +458,31 @@ function prepareChartData(readings: HRVReading[]) {
     }],
     legend: ['HRV (ms)'],
   };
+
+  return {
+    chartData,
+  };
+}
+
+/**
+ * Find the inflection reading within the currently displayed window.
+ */
+function getInflectionPoint(
+  analysis: HRVAnalysisResult | null | undefined,
+  displayReadings: HRVReading[]
+): { index: number; reading: HRVReading } | null {
+  if (!analysis?.inversionDetectedAt || displayReadings.length === 0) {
+    return null;
+  }
+
+  const target = new Date(analysis.inversionDetectedAt).getTime();
+  const idx = displayReadings.findIndex(r => new Date(r.timestamp).getTime() >= target);
+
+  if (idx === -1) {
+    return null;
+  }
+
+  return { index: idx, reading: displayReadings[idx] };
 }
 
 const styles = StyleSheet.create({
