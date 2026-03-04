@@ -85,6 +85,7 @@ import { useUser } from '../context/UserContext';
 import { formatDate } from '../utils/dateUtils';
 import { exportDataAsCSV, exportDataAsJSON } from '../services/storage';
 import { calculateWeeklyAverages } from '../services/hrvAnalysis';
+import { buildTrendLineDataset } from './dataScreenTrend';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, CHART_CONFIG } from '../constants';
 import type { HRVReading } from '../types';
 
@@ -336,14 +337,24 @@ function prepareChartData(readings: HRVReading[]) {
   
   // Create data points
   const data = displayReadings.map(r => r.hrvValue);
+  const trendData = buildTrendLineDataset(displayReadings);
+  const datasets = [{
+    data,
+    color: (opacity = 1) => `rgba(107, 78, 230, ${opacity})`,
+    strokeWidth: 2,
+  }];
+
+  if (trendData.length === data.length) {
+    datasets.push({
+      data: trendData,
+      color: (opacity = 1) => `rgba(244, 67, 54, ${opacity})`,
+      strokeWidth: 2,
+    });
+  }
   
   return {
     labels,
-    datasets: [{
-      data,
-      color: (opacity = 1) => `rgba(107, 78, 230, ${opacity})`,
-      strokeWidth: 2,
-    }],
+    datasets,
     legend: ['HRV (ms)'],
   };
 }
