@@ -18,7 +18,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-405 | Create unit tests for analysis functions | 5 | High | `hrvAnalysis.ts` | |
+| STORY-405 | Create unit tests for analysis functions | 5 | High | `hrvAnalysis.ts` |Emma |
 | STORY-801 | Add date picker for due date input | 2 | High | `SetupScreen.tsx` | Emma|
 | STORY-802 | Add inline form validation feedback | 2 | High | `SetupScreen.tsx` |Emma |
 | STORY-601 | Add error state management to context | 3 | High | `UserContext.tsx` |Roshni |
