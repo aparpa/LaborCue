@@ -98,9 +98,22 @@ export default function StatusCard({
         return 'More data needed';
     }
   };
+
+  const accessibilityLabel = [
+    getStatusTitle(),
+    getConfidenceLabel(),
+    message,
+    recommendation ? `Recommendation: ${recommendation}` : null,
+  ]
+    .filter(Boolean)
+    .join('. ');
   
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View
+      accessibilityRole="text"
+      accessibilityLabel={accessibilityLabel}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       {/* Status Header */}
       <View style={styles.header}>
         <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
@@ -187,7 +200,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
   },
   statusBarBackground: {
-    height: 8,git 
+    height: 8,
     backgroundColor: COLORS.border,
     borderRadius: 4,
     overflow: 'hidden',

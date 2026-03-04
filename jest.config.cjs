@@ -5,6 +5,9 @@ const coverageDirectory = path.resolve(process.env.COVERAGE_DIR || path.join(__d
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', { tsconfig: { jsx: 'react' } }],
+  },
   testMatch: [
     '**/__tests__/**/*.(spec|test).[jt]s?(x)',
     '**/?(*.)+(spec|test).[tj]s?(x)'
