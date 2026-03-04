@@ -50,7 +50,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | |
 | STORY-1003 | Highlight inflection point on chart | 3 | High | `DataScreen.tsx` |Roshni|
 | STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` | |
-| STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` | |
+| STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` |Emma |
 | STORY-1009 | Statistical summary panel | 3 | Medium | `DataScreen.tsx` |Roshni |
 | STORY-1302 | Show percentage change in trend | 2 | Medium | `TrendIndicator.tsx` |Faduma |
 | STORY-1303 | Mini sparkline in trend indicator | 3 | Medium | `TrendIndicator.tsx` |Faduma |
