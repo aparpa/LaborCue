@@ -151,6 +151,7 @@ export function analyzeHRV(
   
   // Get appropriate messages
   const messages = STATUS_MESSAGES[getStatusKey(status.inversionStatus)];
+  const postInversionAlert = getPostInversionAlert(inversionResult, weeklyAverages);
   
   return {
     currentTrend,
@@ -161,8 +162,8 @@ export function analyzeHRV(
       ? getDateForGestationalWeek(inversionResult.inversionWeek, estimatedDueDate)
       : undefined,
     lastAnalyzedAt: now,
-    message: messages.description,
-    recommendation: messages.recommendation
+    message: postInversionAlert?.message ?? messages.description,
+    recommendation: postInversionAlert?.recommendation ?? messages.recommendation
   };
 }
 
@@ -421,6 +422,39 @@ function getStatusKey(status: InversionStatus): keyof typeof STATUS_MESSAGES {
     default:
       return 'insufficient_data';
   }
+}
+
+/**
+ * Build patient-facing inversion alerts:
+ * - First alert at 2 weeks after inversion detection
+ * - Weekly follow-up alerts after the first alert
+ */
+function getPostInversionAlert(
+  inversionResult: InversionDetectionResult,
+  weeklyAverages: HRVAggregate[]
+): { message: string; recommendation: string } | null {
+  if (!inversionResult.inversionDetected || !inversionResult.inversionWeek || weeklyAverages.length === 0) {
+    return null;
+  }
+
+  const latestWeek = weeklyAverages[weeklyAverages.length - 1].gestationalWeek;
+  const weeksSinceInversion = latestWeek - inversionResult.inversionWeek;
+
+  if (weeksSinceInversion < 2) {
+    return null;
+  }
+
+  if (weeksSinceInversion === 2) {
+    return {
+      message: `Inversion detected in week ${inversionResult.inversionWeek}. Two-week follow-up now confirms this trend.`,
+      recommendation: 'Continue weekly monitoring. If this trend persists, contact your healthcare provider.',
+    };
+  }
+
+  return {
+    message: `Inversion detected ${weeksSinceInversion} weeks ago (week ${inversionResult.inversionWeek}). Weekly follow-up continues to confirm the trend prediction.`,
+    recommendation: 'Confirmed detection: please contact your healthcare provider to discuss these findings.',
+  };
 }
 
 /**
