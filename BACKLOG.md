@@ -54,7 +54,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-1009 | Statistical summary panel | 3 | Medium | `DataScreen.tsx` |Roshni |
 | STORY-1302 | Show percentage change in trend | 2 | Medium | `TrendIndicator.tsx` |Faduma |
 | STORY-1303 | Mini sparkline in trend indicator | 3 | Medium | `TrendIndicator.tsx` |Faduma |
-| STORY-1004 | Date range filter for chart | 3 | Medium | `DataScreen.tsx` | |
+| STORY-1004 | Date range filter for chart | 3 | Medium | `DataScreen.tsx` |Emma |
 
 ---
 
