@@ -4,12 +4,18 @@
  * Verifies that the inflection/inversion marker is rendered on the chart
  * when an inversion is present, and omitted when no inversion is provided.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-var-requires */
 
 import React from 'react';
 import { render, screen, configure } from '@testing-library/react-native';
 import DataScreen from '../../src/screens/DataScreen';
 import type { HRVAnalysisResult, HRVReading } from '../../src/types';
 import { InversionStatus } from '../../src/types';
+
+jest.mock('../../src/services/storage', () => ({
+  exportDataAsCSV: jest.fn(),
+  exportDataAsJSON: jest.fn(),
+}));
 
 // Lightweight React Native mock to avoid ESM parsing issues in RN entrypoint.
 jest.mock('react-native', () => {

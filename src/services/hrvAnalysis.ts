@@ -73,7 +73,6 @@ import {
   MINIMUM_DATA_POINTS_FOR_TREND,
   MINIMUM_DATA_POINTS_FOR_INVERSION,
   CONSECUTIVE_READINGS_FOR_TREND_CHANGE,
-  SIGNIFICANT_CHANGE_THRESHOLD,
   EXPECTED_INFLECTION_WEEK,
   WEEKS_BEFORE_DELIVERY_INFLECTION,
   STATUS_MESSAGES,
@@ -133,6 +132,7 @@ export function analyzeHRV(
   
   // Smooth nightly readings for trend analysis
   const smoothedReadings = buildSmoothedSeries(sortedReadings, SMOOTHING_WINDOW_POINTS);
+  const weeklyAverages = calculateWeeklyAverages(sortedReadings);
   
   // Determine current trend
   const currentTrend = detectCurrentTrend(smoothedReadings);

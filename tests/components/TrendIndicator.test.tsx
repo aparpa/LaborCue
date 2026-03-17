@@ -6,12 +6,10 @@
  */
 
 import React from "react";
-const renderer = require("react-test-renderer");
+import renderer from "react-test-renderer";
 
 // Mock react-native so Jest can run without RN transform configuration.
 jest.mock("react-native", () => {
-  const ReactLocal = require("react");
-
   return {
     View: "View",
     Text: "Text",
