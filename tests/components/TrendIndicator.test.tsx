@@ -109,4 +109,23 @@ describe("TrendIndicator (STORY-1302)", () => {
     // Assert
     expect(output).not.toMatch(/%/);
   });
+
+  /**
+   * Function: supports the horizontal layout variant.
+   * Expected behavior: the same trend content renders when horizontal layout is enabled.
+   */
+  it("renders trend details in the horizontal layout variant", () => {
+    // Arrange
+    const heartRateData = [100, 110];
+
+    // Act
+    const output = renderAsString({
+      heartRateData,
+      layout: "horizontal",
+    });
+
+    // Assert
+    expect(output).toContain("Increasing");
+    expect(output).toMatch(/\+?10(\.0)?%/);
+  });
 });
