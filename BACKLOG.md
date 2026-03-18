@@ -63,7 +63,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-803 | Multi-step setup with progress bar | 3 | Medium | `SetupScreen.tsx` | |
+| STORY-803 | Multi-step setup with progress bar | 3 | Medium | `SetupScreen.tsx` |Emma |
 | STORY-806 | Keyboard avoiding improvements | 2 | Medium | `SetupScreen.tsx` | |
 | STORY-704 | Onboarding tutorial carousel | 3 | Medium | `AppNavigator.tsx` | |
 | STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` | |
