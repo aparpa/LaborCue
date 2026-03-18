@@ -154,6 +154,11 @@ export interface DateRange {
   earliest: string;
   latest: string;
   mostLikely: string;
+  confidenceInterval95?: {
+    lowerBound: string;
+    upperBound: string;
+    weeksMargin: number;
+  };
 }
 
 // ============================================================================

@@ -147,7 +147,7 @@ export function analyzeHRV(
   const confidence = calculateConfidence(readings.length, inversionResult);
   
   // Generate prediction if we have enough data
-  const prediction = generatePrediction(inversionResult, estimatedDueDate);
+  const prediction = generatePrediction(inversionResult, estimatedDueDate, sortedReadings);
   
   // Get appropriate messages
   const messages = STATUS_MESSAGES[getStatusKey(status.inversionStatus)];
@@ -369,7 +369,8 @@ function calculateConfidence(
 // and expose them via HRVAnalysisResult.
 function generatePrediction(
   inversionResult: InversionDetectionResult,
-  estimatedDueDate: string
+  estimatedDueDate: string,
+  readings: HRVReading[]
 ): DateRange | undefined {
   if (!inversionResult.inversionDetected || !inversionResult.inversionWeek) {
     return undefined;
@@ -384,14 +385,43 @@ function generatePrediction(
   const weeksUntilDue = FULL_TERM_WEEKS - predictedDeliveryWeek;
   
   const predictedDate = addWeeks(dueDate, -weeksUntilDue);
-  const earliestDate = addWeeks(predictedDate, -1);
-  const latestDate = addWeeks(predictedDate, 1);
+  const marginWeeks = getPredictionMarginWeeks(readings, inversionResult.confidence);
+  const earliestDate = addWeeks(predictedDate, -marginWeeks);
+  const latestDate = addWeeks(predictedDate, marginWeeks);
   
   return {
     earliest: earliestDate.toISOString(),
     mostLikely: predictedDate.toISOString(),
-    latest: latestDate.toISOString()
+    latest: latestDate.toISOString(),
+    confidenceInterval95: {
+      lowerBound: earliestDate.toISOString(),
+      upperBound: latestDate.toISOString(),
+      weeksMargin: marginWeeks,
+    },
   };
+}
+
+/**
+ * Estimate 95% CI half-width in weeks from value variance and inversion confidence.
+ */
+function getPredictionMarginWeeks(
+  readings: HRVReading[],
+  inversionConfidence: number
+): number {
+  if (readings.length < 2) {
+    return 1;
+  }
+
+  const values = readings.map((r) => r.hrvValue);
+  const mean = computeMean(values);
+  const stdDev = computeStandardDeviation(values);
+  const coefficientOfVariation = mean === 0 ? 0 : stdDev / Math.abs(mean);
+
+  const varianceFactor = clamp01(coefficientOfVariation / 0.35);
+  const confidencePenalty = clamp01(1 - inversionConfidence);
+
+  const rawMargin = 0.75 + varianceFactor * 1.75 + confidencePenalty;
+  return roundToNearestHalf(rawMargin);
 }
 
 /**
@@ -580,6 +610,19 @@ function computeMean(values: number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+function computeStandardDeviation(values: number[]): number {
+  if (values.length < 2) return 0;
+  const mean = computeMean(values);
+  const variance =
+    values.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) /
+    (values.length - 1);
+  return Math.sqrt(variance);
+}
+
+function roundToNearestHalf(value: number): number {
+  return Math.max(0.5, Math.round(value * 2) / 2);
+}
+
 // Expose internal helpers for targeted unit tests (non-production use).
 export const __testables = {
   detectCurrentTrend,
@@ -594,4 +637,7 @@ export const __testables = {
   getPositiveRunLength,
   normalizeSlope,
   computeMean,
+  computeStandardDeviation,
+  roundToNearestHalf,
+  getPredictionMarginWeeks,
 };
