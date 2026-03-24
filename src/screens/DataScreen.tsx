@@ -239,7 +239,7 @@ export default function DataScreen(): JSX.Element {
                   withVerticalLabels={true}
                   withHorizontalLabels={true}
                   fromZero={false}
-                  decorator={({ x, y, width, height }: { x: (i: number) => number; y: (v: number) => number; width: number; height: number; }) => {
+                  decorator={({ x, y, height }: { x: (i: number) => number; y: (v: number) => number; width: number; height: number; }) => {
                     if (!inflectionPoint) return null;
                     const { index, reading } = inflectionPoint;
                     const dataValue = chartData.datasets[0].data[index];

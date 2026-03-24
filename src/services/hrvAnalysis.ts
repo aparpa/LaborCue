@@ -73,7 +73,6 @@ import {
   MINIMUM_DATA_POINTS_FOR_TREND,
   MINIMUM_DATA_POINTS_FOR_INVERSION,
   CONSECUTIVE_READINGS_FOR_TREND_CHANGE,
-  SIGNIFICANT_CHANGE_THRESHOLD,
   EXPECTED_INFLECTION_WEEK,
   WEEKS_BEFORE_DELIVERY_INFLECTION,
   STATUS_MESSAGES,
@@ -133,6 +132,7 @@ export function analyzeHRV(
   
   // Smooth nightly readings for trend analysis
   const smoothedReadings = buildSmoothedSeries(sortedReadings, SMOOTHING_WINDOW_POINTS);
+  const weeklyAverages = calculateWeeklyAverages(sortedReadings);
   
   // Determine current trend
   const currentTrend = detectCurrentTrend(smoothedReadings);
@@ -147,10 +147,11 @@ export function analyzeHRV(
   const confidence = calculateConfidence(readings.length, inversionResult);
   
   // Generate prediction if we have enough data
-  const prediction = generatePrediction(inversionResult, estimatedDueDate);
+  const prediction = generatePrediction(inversionResult, estimatedDueDate, sortedReadings);
   
   // Get appropriate messages
   const messages = STATUS_MESSAGES[getStatusKey(status.inversionStatus)];
+  const postInversionAlert = getPostInversionAlert(inversionResult, weeklyAverages);
   
   return {
     currentTrend,
@@ -161,8 +162,8 @@ export function analyzeHRV(
       ? getDateForGestationalWeek(inversionResult.inversionWeek, estimatedDueDate)
       : undefined,
     lastAnalyzedAt: now,
-    message: messages.description,
-    recommendation: messages.recommendation
+    message: postInversionAlert?.message ?? messages.description,
+    recommendation: postInversionAlert?.recommendation ?? messages.recommendation
   };
 }
 
@@ -369,7 +370,8 @@ function calculateConfidence(
 // and expose them via HRVAnalysisResult.
 function generatePrediction(
   inversionResult: InversionDetectionResult,
-  estimatedDueDate: string
+  estimatedDueDate: string,
+  readings: HRVReading[]
 ): DateRange | undefined {
   if (!inversionResult.inversionDetected || !inversionResult.inversionWeek) {
     return undefined;
@@ -384,14 +386,43 @@ function generatePrediction(
   const weeksUntilDue = FULL_TERM_WEEKS - predictedDeliveryWeek;
   
   const predictedDate = addWeeks(dueDate, -weeksUntilDue);
-  const earliestDate = addWeeks(predictedDate, -1);
-  const latestDate = addWeeks(predictedDate, 1);
+  const marginWeeks = getPredictionMarginWeeks(readings, inversionResult.confidence);
+  const earliestDate = addWeeks(predictedDate, -marginWeeks);
+  const latestDate = addWeeks(predictedDate, marginWeeks);
   
   return {
     earliest: earliestDate.toISOString(),
     mostLikely: predictedDate.toISOString(),
-    latest: latestDate.toISOString()
+    latest: latestDate.toISOString(),
+    confidenceInterval95: {
+      lowerBound: earliestDate.toISOString(),
+      upperBound: latestDate.toISOString(),
+      weeksMargin: marginWeeks,
+    },
   };
+}
+
+/**
+ * Estimate 95% CI half-width in weeks from value variance and inversion confidence.
+ */
+function getPredictionMarginWeeks(
+  readings: HRVReading[],
+  inversionConfidence: number
+): number {
+  if (readings.length < 2) {
+    return 1;
+  }
+
+  const values = readings.map((r) => r.hrvValue);
+  const mean = computeMean(values);
+  const stdDev = computeStandardDeviation(values);
+  const coefficientOfVariation = mean === 0 ? 0 : stdDev / Math.abs(mean);
+
+  const varianceFactor = clamp01(coefficientOfVariation / 0.35);
+  const confidencePenalty = clamp01(1 - inversionConfidence);
+
+  const rawMargin = 0.75 + varianceFactor * 1.75 + confidencePenalty;
+  return roundToNearestHalf(rawMargin);
 }
 
 /**
@@ -421,6 +452,39 @@ function getStatusKey(status: InversionStatus): keyof typeof STATUS_MESSAGES {
     default:
       return 'insufficient_data';
   }
+}
+
+/**
+ * Build patient-facing inversion alerts:
+ * - First alert at 2 weeks after inversion detection
+ * - Weekly follow-up alerts after the first alert
+ */
+function getPostInversionAlert(
+  inversionResult: InversionDetectionResult,
+  weeklyAverages: HRVAggregate[]
+): { message: string; recommendation: string } | null {
+  if (!inversionResult.inversionDetected || !inversionResult.inversionWeek || weeklyAverages.length === 0) {
+    return null;
+  }
+
+  const latestWeek = weeklyAverages[weeklyAverages.length - 1].gestationalWeek;
+  const weeksSinceInversion = latestWeek - inversionResult.inversionWeek;
+
+  if (weeksSinceInversion < 2) {
+    return null;
+  }
+
+  if (weeksSinceInversion === 2) {
+    return {
+      message: `Inversion detected in week ${inversionResult.inversionWeek}. Two-week follow-up now confirms this trend.`,
+      recommendation: 'Continue weekly monitoring. If this trend persists, contact your healthcare provider.',
+    };
+  }
+
+  return {
+    message: `Inversion detected ${weeksSinceInversion} weeks ago (week ${inversionResult.inversionWeek}). Weekly follow-up continues to confirm the trend prediction.`,
+    recommendation: 'Confirmed detection: please contact your healthcare provider to discuss these findings.',
+  };
 }
 
 /**
@@ -580,6 +644,19 @@ function computeMean(values: number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+function computeStandardDeviation(values: number[]): number {
+  if (values.length < 2) return 0;
+  const mean = computeMean(values);
+  const variance =
+    values.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) /
+    (values.length - 1);
+  return Math.sqrt(variance);
+}
+
+function roundToNearestHalf(value: number): number {
+  return Math.max(0.5, Math.round(value * 2) / 2);
+}
+
 // Expose internal helpers for targeted unit tests (non-production use).
 export const __testables = {
   detectCurrentTrend,
@@ -594,4 +671,7 @@ export const __testables = {
   getPositiveRunLength,
   normalizeSlope,
   computeMean,
+  computeStandardDeviation,
+  roundToNearestHalf,
+  getPredictionMarginWeeks,
 };

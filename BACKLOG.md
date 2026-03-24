@@ -18,7 +18,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-405 | Create unit tests for analysis functions | 5 | High | `hrvAnalysis.ts` | |
+| STORY-405 | Create unit tests for analysis functions | 5 | High | `hrvAnalysis.ts` |Emma |
 | STORY-801 | Add date picker for due date input | 2 | High | `SetupScreen.tsx` | Emma|
 | STORY-802 | Add inline form validation feedback | 2 | High | `SetupScreen.tsx` |Emma |
 | STORY-601 | Add error state management to context | 3 | High | `UserContext.tsx` |Roshni |
@@ -46,15 +46,15 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-402 | Add confidence intervals to predictions | 5 | High | `hrvAnalysis.ts` | |
+| STORY-402 | Add confidence intervals to predictions | 5 | High | `hrvAnalysis.ts` |Leah |
 | STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | |
 | STORY-1003 | Highlight inflection point on chart | 3 | High | `DataScreen.tsx` |Roshni|
 | STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` | |
-| STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` | |
-| STORY-1009 | Statistical summary panel | 3 | Medium | `DataScreen.tsx` | |
+| STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` |Emma |
+| STORY-1009 | Statistical summary panel | 3 | Medium | `DataScreen.tsx` |Roshni |
 | STORY-1302 | Show percentage change in trend | 2 | Medium | `TrendIndicator.tsx` |Faduma |
-| STORY-1303 | Mini sparkline in trend indicator | 3 | Medium | `TrendIndicator.tsx` | |
-| STORY-1004 | Date range filter for chart | 3 | Medium | `DataScreen.tsx` | |
+| STORY-1303 | Mini sparkline in trend indicator | 3 | Medium | `TrendIndicator.tsx` |Faduma |
+| STORY-1004 | Date range filter for chart | 3 | Medium | `DataScreen.tsx` |Emma |
 
 ---
 
@@ -63,11 +63,11 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-803 | Multi-step setup with progress bar | 3 | Medium | `SetupScreen.tsx` | |
+| STORY-803 | Multi-step setup with progress bar | 3 | Medium | `SetupScreen.tsx` |Emma |
 | STORY-806 | Keyboard avoiding improvements | 2 | Medium | `SetupScreen.tsx` | |
 | STORY-704 | Onboarding tutorial carousel | 3 | Medium | `AppNavigator.tsx` | |
 | STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` | |
-| STORY-902 | Animated status transitions | 3 | Medium | `HomeScreen.tsx` | |
+| STORY-902 | Animated status transitions | 3 | Medium | `HomeScreen.tsx` | Leah|
 | STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | |
 | STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` | |
 | STORY-1008 | Improved tooltip positioning | 2 | Medium | `DataScreen.tsx` | |
