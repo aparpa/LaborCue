@@ -71,7 +71,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | |
 | STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` | |
 | STORY-1008 | Improved tooltip positioning | 2 | Medium | `DataScreen.tsx` | |
-| STORY-602 | Optimistic updates in context | 3 | Medium | `UserContext.tsx` | |
+| STORY-602 | Optimistic updates in context | 3 | Medium | `UserContext.tsx` |Roshni|
 
 ---
 
