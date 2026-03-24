@@ -65,6 +65,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+import Svg, { Circle, Polyline } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
 
@@ -74,9 +75,48 @@ import TrendIndicator from '../components/TrendIndicator';
 import { formatGestationalAge, formatDate, getTimeUntil } from '../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants';
 import { InversionStatus } from '../types';
-import type { DrawerParamList } from '../types';
+import type { DrawerParamList, HRVReading } from '../types';
 
 type HomeScreenNavigationProp = DrawerNavigationProp<DrawerParamList, 'Home'>;
+const SPARKLINE_WIDTH = 96;
+const SPARKLINE_HEIGHT = 40;
+const SPARKLINE_PADDING = 4;
+
+function buildSparklinePoints(readings: HRVReading[]): {
+  points: string;
+  lastPoint: { x: number; y: number } | null;
+} {
+  if (readings.length === 0) {
+    return {
+      points: '',
+      lastPoint: null,
+    };
+  }
+
+  const values = readings.map((reading) => reading.hrvValue);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const range = Math.max(1, maxValue - minValue);
+  const denominator = Math.max(1, readings.length - 1);
+
+  const coordinates = values.map((value, index) => {
+    const x = (index / denominator) * SPARKLINE_WIDTH;
+    const normalizedValue = (value - minValue) / range;
+    const y =
+      SPARKLINE_HEIGHT -
+      (SPARKLINE_PADDING +
+        normalizedValue * (SPARKLINE_HEIGHT - SPARKLINE_PADDING * 2));
+
+    return { x, y };
+  });
+
+  return {
+    points: coordinates
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .join(' '),
+    lastPoint: coordinates[coordinates.length - 1],
+  };
+}
 
 export default function HomeScreen(): JSX.Element {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -91,6 +131,14 @@ export default function HomeScreen(): JSX.Element {
   } = useUser();
   
   const [refreshing, setRefreshing] = React.useState(false);
+  const recentReadings = hrvReadings.slice(-7);
+  const sparkline = buildSparklinePoints(recentReadings);
+  const sparklineColor =
+    analysisResult?.currentTrend === 'increasing'
+      ? COLORS.success
+      : analysisResult?.currentTrend === 'decreasing'
+        ? COLORS.primary
+        : COLORS.neutral;
   
   const onRefresh = React.useCallback(async () => {
     // STORY-901 start: trigger haptic feedback when refresh begins.
@@ -144,6 +192,36 @@ export default function HomeScreen(): JSX.Element {
             timestamps={hrvReadings.map((reading) => reading.timestamp)}
           />
           {/* STORY-903 start: add a mini sparkline chart alongside trend info. */}
+          <View style={styles.sparklineContainer}>
+            <Text style={styles.sparklineLabel}>Last 7</Text>
+            {sparkline.points ? (
+              <Svg
+                width={SPARKLINE_WIDTH}
+                height={SPARKLINE_HEIGHT}
+                viewBox={`0 0 ${SPARKLINE_WIDTH} ${SPARKLINE_HEIGHT}`}
+                accessibilityLabel="Recent HRV sparkline"
+              >
+                <Polyline
+                  points={sparkline.points}
+                  fill="none"
+                  stroke={sparklineColor}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {sparkline.lastPoint && (
+                  <Circle
+                    cx={sparkline.lastPoint.x}
+                    cy={sparkline.lastPoint.y}
+                    r={3}
+                    fill={sparklineColor}
+                  />
+                )}
+              </Svg>
+            ) : (
+              <Text style={styles.sparklineEmpty}>No readings</Text>
+            )}
+          </View>
           {latestReading && (
             <View style={styles.latestReading}>
               <Text style={styles.latestValue}>{latestReading.hrvValue.toFixed(1)} ms</Text>
@@ -256,12 +334,27 @@ const styles = StyleSheet.create({
   trendContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: COLORS.backgroundSecondary,
     borderRadius: BORDER_RADIUS.lg,
     padding: SPACING.lg,
   },
+  sparklineContainer: {
+    marginLeft: SPACING.md,
+    alignItems: 'center',
+  },
+  sparklineLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.xs,
+  },
+  sparklineEmpty: {
+    minWidth: SPARKLINE_WIDTH,
+    textAlign: 'center',
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+  },
   latestReading: {
+    marginLeft: 'auto',
     alignItems: 'flex-end',
   },
   latestValue: {

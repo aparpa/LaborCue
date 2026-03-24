@@ -3,6 +3,7 @@ import {
   calculateWeeklyAverages,
   calculateRollingAverage,
   getStatusSummary,
+  __testables,
 } from '../../src/services/hrvAnalysis';
 import type { HRVReading } from '../../src/types';
 import { InversionStatus } from '../../src/types';
@@ -135,7 +136,39 @@ describe('analyzeHRV', () => {
     expect(result.currentTrend).toBe('increasing');
     expect(result.inversionStatus).not.toBe(InversionStatus.INSUFFICIENT_DATA);
     expect(result.predictedDeliveryWindow).toBeDefined();
+    expect(result.predictedDeliveryWindow?.confidenceInterval95).toBeDefined();
     expect(result.inversionDetectedAt).toBeDefined();
+  });
+});
+
+describe('Story 402 - prediction confidence intervals', () => {
+  it('includes a 95% confidence interval payload when prediction exists', () => {
+    const declining = [140, 130, 120, 110, 100, 90, 80, 70, 60, 50];
+    const rising = [52, 56, 62, 68, 74, 80, 86, 92, 98, 104, 110, 116];
+
+    const result = analyzeHRV(
+      buildReadings([...declining, ...rising], 20),
+      '2024-12-01T00:00:00.000Z'
+    );
+
+    expect(result.predictedDeliveryWindow?.confidenceInterval95).toBeDefined();
+    expect(result.predictedDeliveryWindow?.confidenceInterval95?.weeksMargin).toBeGreaterThan(0);
+    expect(result.predictedDeliveryWindow?.confidenceInterval95?.lowerBound).toBe(
+      result.predictedDeliveryWindow?.earliest
+    );
+    expect(result.predictedDeliveryWindow?.confidenceInterval95?.upperBound).toBe(
+      result.predictedDeliveryWindow?.latest
+    );
+  });
+
+  it('widens the prediction interval when HRV variance is higher', () => {
+    const lowVarianceReadings = buildReadings([80, 81, 79, 80, 82, 81, 80, 79, 81, 80], 20);
+    const highVarianceReadings = buildReadings([40, 120, 35, 125, 30, 130, 45, 115, 50, 110], 20);
+
+    const lowMargin = __testables.getPredictionMarginWeeks(lowVarianceReadings, 0.8);
+    const highMargin = __testables.getPredictionMarginWeeks(highVarianceReadings, 0.8);
+
+    expect(highMargin).toBeGreaterThan(lowMargin);
   });
 });
 
