@@ -190,6 +190,7 @@ export default function HomeScreen(): JSX.Element {
             trend={analysisResult?.currentTrend ?? 'insufficient_data'}
             heartRateData={hrvReadings.map((reading) => reading.hrvValue)}
             timestamps={hrvReadings.map((reading) => reading.timestamp)}
+            layout="horizontal"
           />
           {/* STORY-903 start: add a mini sparkline chart alongside trend info. */}
           <View style={styles.sparklineContainer}>

@@ -202,6 +202,7 @@ export default function TrendIndicator({
 
   return (
     <View
+      testID="trend-indicator-root"
       style={[
         styles.container,
         layout === "horizontal" && styles.horizontalContainer,
@@ -236,8 +237,15 @@ export default function TrendIndicator({
         </Animated.Text>
       </View>
 
-      <View style={styles.textContainer}>
+      <View
+        testID="trend-indicator-text-container"
+        style={[
+          styles.textContainer,
+          layout === "horizontal" && styles.textContainerHorizontal,
+        ]}
+      >
         <View
+          testID="trend-indicator-label-row"
           style={[
             styles.labelRow,
             layout === "horizontal" && styles.labelRowHorizontal,
@@ -293,7 +301,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   horizontalContainer: {
-    justifyContent: "space-between",
+    flex: 1,
+    justifyContent: "flex-start",
   },
   iconContainer: {
     justifyContent: "center",
@@ -307,12 +316,17 @@ const styles = StyleSheet.create({
     marginLeft: SPACING.md,
     flexShrink: 1,
   },
+  textContainerHorizontal: {
+    flex: 1,
+    minWidth: 0,
+  },
   labelRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: SPACING.sm,
   },
   labelRowHorizontal: {
+    justifyContent: "space-between",
     flexWrap: "wrap",
     rowGap: SPACING.xs,
   },
