@@ -29,9 +29,12 @@ jest.mock('../../src/components/StatusCard', () => {
   };
 });
 
+const mockTrendIndicator = jest.fn();
+
 jest.mock('../../src/components/TrendIndicator', () => {
   const React = require('react');
-  return function MockTrendIndicator(): JSX.Element {
+  return function MockTrendIndicator(props: Record<string, unknown>): JSX.Element {
+    mockTrendIndicator(props);
     return React.createElement('text', null, 'Trend Indicator');
   };
 });
@@ -127,6 +130,17 @@ function renderHomeScreen(readings: HRVReading[]) {
 describe('HomeScreen STORY-903', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('passes the horizontal layout variant to TrendIndicator', () => {
+    // Arrange
+    renderHomeScreen(makeReadings(7));
+
+    // Assert
+    expect(mockTrendIndicator).toHaveBeenCalled();
+    expect(mockTrendIndicator.mock.calls[0][0]).toMatchObject({
+      layout: 'horizontal',
+    });
   });
 
   it('renders a mini sparkline section alongside trend information', () => {

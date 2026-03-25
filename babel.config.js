@@ -5,3 +5,4 @@ module.exports = function (api) {
     // even when babel-preset-expo is not hoisted at the project root.
     presets: [require.resolve('expo/internal/babel-preset')],
   };
+};
