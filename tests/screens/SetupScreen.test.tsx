@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
-import { Alert, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import SetupScreen from '../../src/screens/SetupScreen';
 
 jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');
@@ -127,9 +127,7 @@ describe('SetupScreen multi-step flow (STORY-803)', () => {
     });
   });
 
-  it('blocks submission on the final step when pregnancy details are invalid', async () => {
-    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-
+  it('blocks submission on the final step and shows the inline error when pregnancy details are invalid', async () => {
     renderSetupScreen();
     goToPregnancyDetailsStep();
     fireEvent.changeText(screen.getByPlaceholderText('24'), '0');
@@ -137,11 +135,10 @@ describe('SetupScreen multi-step flow (STORY-803)', () => {
     fireEvent.press(screen.getByText('Start Tracking'));
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith('Invalid Input', 'Please enter weeks between 1 and 42.');
+      expect(screen.getByText('Please enter weeks between 1 and 42.')).toBeTruthy();
+      expect(screen.getByText('Step 2 of 3')).toBeTruthy();
     });
     expect(mockSetProfile).not.toHaveBeenCalled();
     expect(mockCompleteSetup).not.toHaveBeenCalled();
-
-    alertSpy.mockRestore();
   });
 });
