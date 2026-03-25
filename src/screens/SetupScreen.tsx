@@ -225,8 +225,15 @@ export default function SetupScreen(): JSX.Element {
             </Text>
             <Text style={styles.progressPercent}>{Math.round(progressPercentage)}%</Text>
           </View>
-          <View style={styles.progressBarTrack} accessibilityRole="progressbar">
-            <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
+          <View
+            style={styles.progressBarTrack}
+            accessibilityRole="progressbar"
+            testID="setup-progress-track"
+          >
+            <View
+              style={[styles.progressBarFill, { width: `${progressPercentage}%` }]}
+              testID="setup-progress-fill"
+            />
           </View>
           <View style={styles.stepDots}>
             {SETUP_STEPS.map((step, index) => {
