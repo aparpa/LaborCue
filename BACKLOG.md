@@ -49,7 +49,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-402 | Add confidence intervals to predictions | 5 | High | `hrvAnalysis.ts` |Leah |
 | STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | |
 | STORY-1003 | Highlight inflection point on chart | 3 | High | `DataScreen.tsx` |Roshni|
-| STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` | |
+| STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` |Faduma |
 | STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` |Emma |
 | STORY-1009 | Statistical summary panel | 3 | Medium | `DataScreen.tsx` |Roshni |
 | STORY-1302 | Show percentage change in trend | 2 | Medium | `TrendIndicator.tsx` |Faduma |
@@ -71,7 +71,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | |
 | STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` | |
 | STORY-1008 | Improved tooltip positioning | 2 | Medium | `DataScreen.tsx` | |
-| STORY-602 | Optimistic updates in context | 3 | Medium | `UserContext.tsx` | |
+| STORY-602 | Optimistic updates in context | 3 | Medium | `UserContext.tsx` |Roshni|
 
 ---
 
