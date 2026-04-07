@@ -47,7 +47,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
 | STORY-402 | Add confidence intervals to predictions | 5 | High | `hrvAnalysis.ts` |Leah |
-| STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | |
+| STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | Aditya |
 | STORY-1003 | Highlight inflection point on chart | 3 | High | `DataScreen.tsx` |Roshni|
 | STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` |Faduma |
 | STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` |Emma |
