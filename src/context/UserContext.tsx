@@ -272,23 +272,49 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
   const addHRVReading = useCallback(async (
     reading: Omit<HRVReading, 'id'>
   ): Promise<void> => {
-    try {
+    // If we don't yet have a profile, skip optimistic analysis but still persist
+    if (!profile) {
       const savedReading = await saveHRVReading(reading);
       const updatedReadings = [...hrvReadings, savedReading].sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
       setHrvReadings(updatedReadings);
-      
-      // Re-run analysis
-      if (profile) {
-        const result = analyzeHRV(updatedReadings, profile.estimatedDueDate);
-        setAnalysisResult(result);
-      }
+      return;
+    }
+
+    const previousReadings = hrvReadings;
+    const previousAnalysis = analysisResult;
+
+    const optimisticReading: HRVReading = {
+      ...reading,
+      id: `temp-${Date.now()}`,
+    };
+
+    const optimisticReadings = [...previousReadings, optimisticReading].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    // Optimistic UI update
+    setHrvReadings(optimisticReadings);
+    setAnalysisResult(analyzeHRV(optimisticReadings, profile.estimatedDueDate));
+    setErrorMessage(null);
+
+    try {
+      const savedReading = await saveHRVReading(reading);
+      const reconciledReadings = [...previousReadings, savedReading].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      setHrvReadings(reconciledReadings);
+      setAnalysisResult(analyzeHRV(reconciledReadings, profile.estimatedDueDate));
     } catch (error) {
       console.error('Failed to add HRV reading:', error);
+      // Roll back optimistic state
+      setHrvReadings(previousReadings);
+      setAnalysisResult(previousAnalysis ?? null);
+      setErrorMessage('We could not save your latest reading. Your data was restored.');
       throw error;
     }
-  }, [hrvReadings, profile]);
+  }, [analysisResult, hrvReadings, profile]);
   
   /**
    * Refresh all data from storage
