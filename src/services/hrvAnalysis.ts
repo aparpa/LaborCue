@@ -83,15 +83,45 @@ import { addWeeks, parseISO } from 'date-fns';
 // Internal tuning constants for trend/inversion detection
 const SMOOTHING_WINDOW_POINTS = 3;
 const RECENT_TREND_WINDOW_POINTS = 14;           // ~2 weeks of nightly data
-const INVERSION_RECENT_WINDOW_POINTS = 14;       // window to check for positive slope
-const INVERSION_PERSISTENCE_POINTS = 7;          // require ~2 weeks of positive run (assuming q2n)
 const MIN_R2_FOR_TREND = 0.15;
 const MIN_NORMALIZED_SLOPE = 0.003;              // ~0.3% change per point
+const MIN_SPLINE_WEEKLY_POINTS = 6;
+const MIN_SPLINE_POINTS_PER_SEGMENT = 3;
+const MIN_SPLINE_R2_FOR_INVERSION = 0.35;
+const MIN_SPLINE_RSS_IMPROVEMENT = 0.10;
+const MIN_SPLINE_NORMALIZED_SLOPE = 0.01;        // ~1% change per week
+const MATRIX_EPSILON = 1e-9;
 
 interface SmoothedPoint {
   value: number;
   timestamp: string;
   gestationalWeek: number;
+}
+
+interface SplinePoint {
+  week: number;
+  value: number;
+}
+
+interface LinearSplineModel {
+  candidateDeliveryWeek: number;
+  knotWeek: number;
+  interceptAtKnot: number;
+  preKnotSlope: number;
+  postKnotSlope: number;
+  slopeDelta: number;
+  nearBirthWeeksUntilBirthSlope: number;
+  farFromBirthWeeksUntilBirthSlope: number;
+  r2: number;
+  rss: number;
+  beforeCount: number;
+  afterCount: number;
+}
+
+interface LinearFit {
+  slope: number;
+  rss: number;
+  r2: number;
 }
 
 // STORY-405 start: add Jest tests in a new `src/services/__tests__/hrvAnalysis.test.ts`
@@ -138,7 +168,7 @@ export function analyzeHRV(
   const currentTrend = detectCurrentTrend(smoothedReadings);
   
   // Detect if an inversion has occurred
-  const inversionResult = detectInversion(sortedReadings, smoothedReadings);
+  const inversionResult = detectInversion(sortedReadings, weeklyAverages);
   
   // Determine the status based on inversion timing
   const status = determineStatus(inversionResult);
@@ -151,7 +181,9 @@ export function analyzeHRV(
   
   // Get appropriate messages
   const messages = STATUS_MESSAGES[getStatusKey(status.inversionStatus)];
-  const postInversionAlert = getPostInversionAlert(inversionResult, weeklyAverages);
+  const postInversionAlert = status.inversionStatus === InversionStatus.ON_TRACK
+    ? null
+    : getPostInversionAlert(inversionResult, weeklyAverages);
   
   return {
     currentTrend,
@@ -245,11 +277,12 @@ interface InversionDetectionResult {
  * An inversion is when HRV stops decreasing and starts increasing.
  * In the paper, this typically happens around 7 weeks before delivery.
  */
-// STORY-406 start: replace this inversion logic with the spline/mixed-effect
-// model from the paper, keeping the returned shape compatible.
+// STORY-406: single-user linear spline model based on the paper's mixed-effect
+// spline approach. The population-level random effects reduce to an individual
+// intercept in the app because we only have the active user's data in real time.
 function detectInversion(
   readings: HRVReading[],
-  smoothedReadings: SmoothedPoint[]
+  weeklyAverages: HRVAggregate[]
 ): InversionDetectionResult {
   const noInversion: InversionDetectionResult = {
     inversionDetected: false,
@@ -259,52 +292,59 @@ function detectInversion(
     trendAfterInversion: null
   };
   
-  if (smoothedReadings.length < MINIMUM_DATA_POINTS_FOR_INVERSION) {
+  if (
+    readings.length < MINIMUM_DATA_POINTS_FOR_INVERSION ||
+    weeklyAverages.length < MIN_SPLINE_WEEKLY_POINTS
+  ) {
     return noInversion;
   }
   
-  const longTermRegression = computeRegression(smoothedReadings);
-  const recentWindow = smoothedReadings.slice(-INVERSION_RECENT_WINDOW_POINTS);
-  const recentRegression = computeRegression(recentWindow);
-  
-  const longTermTrend = slopeToTrend(longTermRegression.slope, longTermRegression.r2, smoothedReadings);
-  const recentTrend = slopeToTrend(recentRegression.slope, recentRegression.r2, recentWindow);
-  
-  const recentPositiveRun = getPositiveRunLength(smoothedReadings);
-  const hasPersistentPositiveRun = recentPositiveRun >= INVERSION_PERSISTENCE_POINTS - 1;
-  
-  const longTermMean = computeMean(smoothedReadings.map(p => p.value));
-  const recentMean = computeMean(recentWindow.map(p => p.value));
-  const longTermNormalizedSlope = normalizeSlope(longTermRegression.slope, longTermMean);
-  const recentNormalizedSlope = normalizeSlope(recentRegression.slope, recentMean);
-  
+  const splinePoints = weeklyAverages.map((aggregate) => ({
+    week: aggregate.gestationalWeek,
+    value: aggregate.averageHRV,
+  }));
+  const bestModel = findBestInversionSpline(splinePoints);
+  const baselineFit = fitLinearModel(splinePoints);
+
+  if (!bestModel || !baselineFit) {
+    return noInversion;
+  }
+
+  const meanHRV = computeMean(splinePoints.map((point) => point.value));
+  const normalizedPreSlope = normalizeSlope(bestModel.preKnotSlope, meanHRV);
+  const normalizedPostSlope = normalizeSlope(bestModel.postKnotSlope, meanHRV);
+  const rssImprovement = baselineFit.rss <= MATRIX_EPSILON
+    ? 0
+    : (baselineFit.rss - bestModel.rss) / baselineFit.rss;
+
   const looksLikeInversion =
-    longTermTrend === 'decreasing' &&
-    recentTrend === 'increasing' &&
-    recentNormalizedSlope > MIN_NORMALIZED_SLOPE &&
-    longTermNormalizedSlope < -MIN_NORMALIZED_SLOPE &&
-    hasPersistentPositiveRun;
-  
+    normalizedPreSlope < -MIN_SPLINE_NORMALIZED_SLOPE &&
+    normalizedPostSlope > MIN_SPLINE_NORMALIZED_SLOPE &&
+    bestModel.r2 >= MIN_SPLINE_R2_FOR_INVERSION &&
+    rssImprovement >= MIN_SPLINE_RSS_IMPROVEMENT;
+
   if (!looksLikeInversion) {
     return noInversion;
   }
   
-  const inversionStartIndex = smoothedReadings.length - (INVERSION_PERSISTENCE_POINTS - 1);
-  const inversionWeek =
-    readings[inversionStartIndex]?.gestationalWeek ??
-    smoothedReadings[inversionStartIndex - 1]?.gestationalWeek ??
-    null;
-  
+  const segmentBalance = Math.min(bestModel.beforeCount, bestModel.afterCount) /
+    Math.max(bestModel.beforeCount, bestModel.afterCount);
+  const slopeStrength = clamp01(
+    (Math.abs(normalizedPreSlope) + Math.abs(normalizedPostSlope)) /
+    (MIN_SPLINE_NORMALIZED_SLOPE * 8)
+  );
   const confidence = clamp01(
-    recentRegression.r2 * 0.6 +
-    (recentPositiveRun / INVERSION_PERSISTENCE_POINTS) * 0.4
+    bestModel.r2 * 0.45 +
+    clamp01(rssImprovement) * 0.30 +
+    segmentBalance * 0.15 +
+    slopeStrength * 0.10
   );
   
   return {
     inversionDetected: true,
-    inversionWeek,
+    inversionWeek: bestModel.knotWeek,
     confidence,
-    trendBeforeInversion: longTermTrend === 'decreasing' ? 'decreasing' : 'stable',
+    trendBeforeInversion: 'decreasing',
     trendAfterInversion: 'increasing'
   };
 }
@@ -615,6 +655,218 @@ function slopeToTrend(
 }
 
 /**
+ * Find the best weekly linear spline for a decline-then-rise HRV pattern.
+ * Each candidate delivery week is fit with the paper's fixed knot at seven
+ * weeks until birth. The inferred inversion week is delivery week minus seven.
+ */
+function findBestInversionSpline(points: SplinePoint[]): LinearSplineModel | null {
+  if (points.length < MIN_SPLINE_WEEKLY_POINTS) {
+    return null;
+  }
+
+  const sortedPoints = [...points].sort((a, b) => a.week - b.week);
+  const minWeek = sortedPoints[0].week;
+  const maxWeek = sortedPoints[sortedPoints.length - 1].week;
+  let bestModel: LinearSplineModel | null = null;
+
+  for (
+    let candidateDeliveryWeek = Math.ceil(minWeek + WEEKS_BEFORE_DELIVERY_INFLECTION + 1);
+    candidateDeliveryWeek <= Math.floor(maxWeek + WEEKS_BEFORE_DELIVERY_INFLECTION - 1);
+    candidateDeliveryWeek++
+  ) {
+    const model = fitWeeksUntilBirthSpline(sortedPoints, candidateDeliveryWeek);
+
+    if (!model) {
+      continue;
+    }
+
+    if (!bestModel || model.rss < bestModel.rss) {
+      bestModel = model;
+    }
+  }
+
+  return bestModel;
+}
+
+/**
+ * Fit the paper-aligned spline:
+ * HRV = b0 + b1 * (weeks_until_birth - 7) +
+ *       b2 * max(0, weeks_until_birth - 7).
+ */
+function fitWeeksUntilBirthSpline(
+  points: SplinePoint[],
+  candidateDeliveryWeek: number
+): LinearSplineModel | null {
+  const knotWeek = candidateDeliveryWeek - WEEKS_BEFORE_DELIVERY_INFLECTION;
+  const beforeCount = points.filter((point) => point.week < knotWeek).length;
+  const afterCount = points.filter((point) => point.week > knotWeek).length;
+
+  if (
+    beforeCount < MIN_SPLINE_POINTS_PER_SEGMENT ||
+    afterCount < MIN_SPLINE_POINTS_PER_SEGMENT
+  ) {
+    return null;
+  }
+
+  const xtx = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  const xty = [0, 0, 0];
+
+  for (const point of points) {
+    const centeredWeeksUntilBirth =
+      candidateDeliveryWeek - point.week - WEEKS_BEFORE_DELIVERY_INFLECTION;
+    const farFromBirthHinge = Math.max(0, centeredWeeksUntilBirth);
+    const row = [1, centeredWeeksUntilBirth, farFromBirthHinge];
+
+    for (let i = 0; i < row.length; i++) {
+      xty[i] += row[i] * point.value;
+
+      for (let j = 0; j < row.length; j++) {
+        xtx[i][j] += row[i] * row[j];
+      }
+    }
+  }
+
+  const coefficients = solve3x3(xtx, xty);
+
+  if (!coefficients) {
+    return null;
+  }
+
+  const [interceptAtKnot, nearBirthWeeksUntilBirthSlope, slopeDelta] = coefficients;
+  const farFromBirthWeeksUntilBirthSlope = nearBirthWeeksUntilBirthSlope + slopeDelta;
+  const preKnotSlope = -farFromBirthWeeksUntilBirthSlope;
+  const postKnotSlope = -nearBirthWeeksUntilBirthSlope;
+  const mean = computeMean(points.map((point) => point.value));
+  let rss = 0;
+  let tss = 0;
+
+  for (const point of points) {
+    const centeredWeeksUntilBirth =
+      candidateDeliveryWeek - point.week - WEEKS_BEFORE_DELIVERY_INFLECTION;
+    const predicted =
+      interceptAtKnot +
+      nearBirthWeeksUntilBirthSlope * centeredWeeksUntilBirth +
+      slopeDelta * Math.max(0, centeredWeeksUntilBirth);
+    rss += Math.pow(point.value - predicted, 2);
+    tss += Math.pow(point.value - mean, 2);
+  }
+
+  return {
+    candidateDeliveryWeek,
+    knotWeek,
+    interceptAtKnot,
+    preKnotSlope,
+    postKnotSlope,
+    slopeDelta,
+    nearBirthWeeksUntilBirthSlope,
+    farFromBirthWeeksUntilBirthSlope,
+    r2: tss <= MATRIX_EPSILON ? 0 : 1 - rss / tss,
+    rss,
+    beforeCount,
+    afterCount,
+  };
+}
+
+/**
+ * Baseline single-slope model used to ensure the spline actually improves fit.
+ */
+function fitLinearModel(points: SplinePoint[]): LinearFit | null {
+  if (points.length < 2) {
+    return null;
+  }
+
+  const n = points.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumX2 = 0;
+
+  for (const point of points) {
+    sumX += point.week;
+    sumY += point.value;
+    sumXY += point.week * point.value;
+    sumX2 += point.week * point.week;
+  }
+
+  const denominator = n * sumX2 - sumX * sumX;
+
+  if (Math.abs(denominator) <= MATRIX_EPSILON) {
+    return null;
+  }
+
+  const slope = (n * sumXY - sumX * sumY) / denominator;
+  const intercept = (sumY - slope * sumX) / n;
+  const mean = sumY / n;
+  let rss = 0;
+  let tss = 0;
+
+  for (const point of points) {
+    const predicted = intercept + slope * point.week;
+    rss += Math.pow(point.value - predicted, 2);
+    tss += Math.pow(point.value - mean, 2);
+  }
+
+  return {
+    slope,
+    rss,
+    r2: tss <= MATRIX_EPSILON ? 0 : 1 - rss / tss,
+  };
+}
+
+/**
+ * Solve a 3x3 linear system using Gaussian elimination with partial pivoting.
+ */
+function solve3x3(matrix: number[][], vector: number[]): number[] | null {
+  const augmented = matrix.map((row, index) => [...row, vector[index]]);
+
+  for (let column = 0; column < 3; column++) {
+    let pivotRow = column;
+
+    for (let row = column + 1; row < 3; row++) {
+      if (Math.abs(augmented[row][column]) > Math.abs(augmented[pivotRow][column])) {
+        pivotRow = row;
+      }
+    }
+
+    if (Math.abs(augmented[pivotRow][column]) <= MATRIX_EPSILON) {
+      return null;
+    }
+
+    if (pivotRow !== column) {
+      const swap = augmented[column];
+      augmented[column] = augmented[pivotRow];
+      augmented[pivotRow] = swap;
+    }
+
+    for (let row = column + 1; row < 3; row++) {
+      const factor = augmented[row][column] / augmented[column][column];
+
+      for (let innerColumn = column; innerColumn < 4; innerColumn++) {
+        augmented[row][innerColumn] -= factor * augmented[column][innerColumn];
+      }
+    }
+  }
+
+  const solution = [0, 0, 0];
+
+  for (let row = 2; row >= 0; row--) {
+    let value = augmented[row][3];
+
+    for (let column = row + 1; column < 3; column++) {
+      value -= augmented[row][column] * solution[column];
+    }
+
+    solution[row] = value / augmented[row][row];
+  }
+
+  return solution;
+}
+
+/**
  * Count the trailing positive differences to ensure persistence
  */
 function getPositiveRunLength(points: SmoothedPoint[]): number {
@@ -668,6 +920,10 @@ export const __testables = {
   buildSmoothedSeries,
   computeRegression,
   slopeToTrend,
+  findBestInversionSpline,
+  fitWeeksUntilBirthSpline,
+  fitLinearModel,
+  solve3x3,
   getPositiveRunLength,
   normalizeSlope,
   computeMean,

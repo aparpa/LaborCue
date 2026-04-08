@@ -344,7 +344,9 @@ function generateSampleHRVData(
       gestationalDay: currentDay,
       source: 'manual',
       metadata: {
-        notes: 'Sample test data',
+        notes: 'Synthetic sample data - not real patient data',
+        isSyntheticSample: true,
+        sampleModel: 'paper_spline_v1',
       },
     });
     

@@ -85,6 +85,11 @@ export interface HRVReading {
 export type DataSource = 'manual' | 'device' | 'imported';
 
 /**
+ * Synthetic data generators used for tests and demo/sample flows.
+ */
+export type HRVSampleModel = 'paper_spline_v1';
+
+/**
  * Optional metadata that can accompany an HRV reading
  */
 export interface HRVMetadata {
@@ -92,6 +97,8 @@ export interface HRVMetadata {
   sleepQuality?: number;            // 1-10 scale
   notes?: string;                   // User notes
   deviceId?: string;                // ID of the measuring device
+  isSyntheticSample?: boolean;      // True when generated for testing/demo use
+  sampleModel?: HRVSampleModel;     // Synthetic generator used, if applicable
 }
 
 /**
