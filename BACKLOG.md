@@ -66,7 +66,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-803 | Multi-step setup with progress bar | 3 | Medium | `SetupScreen.tsx` |Emma |
 | STORY-806 | Keyboard avoiding improvements | 2 | Medium | `SetupScreen.tsx` |Emma |
 | STORY-704 | Onboarding tutorial carousel | 3 | Medium | `AppNavigator.tsx` | |
-| STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` | |
+| STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` | Emma|
 | STORY-902 | Animated status transitions | 3 | Medium | `HomeScreen.tsx` | Leah|
 | STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | |
 | STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` | |
