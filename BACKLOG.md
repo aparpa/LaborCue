@@ -80,7 +80,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-506 | PDF export with charts | 5 | High | `storage.ts` | |
+| STORY-506 | PDF export with charts | 5 | High | `storage.ts` |Roshni|
 | STORY-1007 | Shareable chart image | 3 | Medium | `DataScreen.tsx` | |
 | STORY-1104 | Healthcare provider management | 3 | Medium | `SettingsScreen.tsx` | |
 | STORY-504 | Import data from CSV/JSON | 3 | Medium | `storage.ts` | |
