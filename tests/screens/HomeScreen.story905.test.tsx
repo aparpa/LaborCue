@@ -208,6 +208,34 @@ describe('HomeScreen STORY-905', () => {
     });
   });
 
+  it('preserves existing app settings when the coach marks are completed', async () => {
+    // Arrange
+    mockAsyncStorageGetItem.mockResolvedValue(
+      JSON.stringify({
+        notificationsEnabled: false,
+        theme: 'dark',
+        dataRetentionDays: 30,
+      })
+    );
+    renderHomeScreen();
+
+    // Act
+    fireEvent.press(await screen.findByText('Skip tour'));
+
+    // Assert
+    await waitFor(() => {
+      expect(mockAsyncStorageSetItem).toHaveBeenCalledWith(
+        StorageKeys.APP_SETTINGS,
+        JSON.stringify({
+          notificationsEnabled: false,
+          theme: 'dark',
+          dataRetentionDays: 30,
+          hasSeenHomeCoachMarks: true,
+        })
+      );
+    });
+  });
+
   it('persists completion after the final coach mark is finished', async () => {
     // Arrange
     mockAsyncStorageGetItem.mockResolvedValue(null);
