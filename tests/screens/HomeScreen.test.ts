@@ -52,6 +52,17 @@ jest.mock('react-native-svg', () => {
   };
 });
 
+const mockAsyncStorageGetItem = jest.fn();
+const mockAsyncStorageSetItem = jest.fn();
+
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: (...args: unknown[]) => mockAsyncStorageGetItem(...args),
+    setItem: (...args: unknown[]) => mockAsyncStorageSetItem(...args),
+  },
+}));
+
 const mockUseUser = jest.fn();
 
 jest.mock('../../src/context/UserContext', () => ({
@@ -130,6 +141,10 @@ function renderHomeScreen(readings: HRVReading[]) {
 describe('HomeScreen STORY-903', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAsyncStorageGetItem.mockResolvedValue(
+      JSON.stringify({ hasSeenHomeCoachMarks: true })
+    );
+    mockAsyncStorageSetItem.mockResolvedValue(undefined);
   });
 
   it('passes the horizontal layout variant to TrendIndicator', () => {
