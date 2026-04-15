@@ -269,7 +269,7 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   dataRetentionDays: number;        // How long to keep data
   hasSeenOnboardingCarousel?: boolean;
-  hasSeenHomeCoachMarks?: boolean;
+  hasSeenHomeCoachMarks?: boolean;  // Tracks whether the home screen tour was completed
 }
 
 // ============================================================================

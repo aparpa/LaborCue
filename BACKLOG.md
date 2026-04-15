@@ -68,8 +68,8 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-704 | Onboarding tutorial carousel | 3 | Medium | `AppNavigator.tsx` | |
 | STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` | |
 | STORY-902 | Animated status transitions | 3 | Medium | `HomeScreen.tsx` | Leah|
-| STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | |
-| STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` | |
+| STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | Emma|
+| STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` |Emma |
 | STORY-1008 | Improved tooltip positioning | 2 | Medium | `DataScreen.tsx` | |
 | STORY-602 | Optimistic updates in context | 3 | Medium | `UserContext.tsx` |Roshni|
 
@@ -80,8 +80,8 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-506 | PDF export with charts | 5 | High | `storage.ts` | |
-| STORY-1007 | Shareable chart image | 3 | Medium | `DataScreen.tsx` | |
+| STORY-506 | PDF export with charts | 5 | High | `storage.ts` |Roshni|
+| STORY-1007 | Shareable chart image | 3 | Medium | `DataScreen.tsx` |Roshni|
 | STORY-1104 | Healthcare provider management | 3 | Medium | `SettingsScreen.tsx` | |
 | STORY-504 | Import data from CSV/JSON | 3 | Medium | `storage.ts` | |
 
