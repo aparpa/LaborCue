@@ -40,11 +40,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createDrawerNavigator } from '@react-navigation/drawer';
+import {
+  createDrawerNavigator,
+  DrawerContentScrollView,
+  DrawerItemList,
+} from '@react-navigation/drawer';
 import { ActivityIndicator, View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 import { useUser } from '../context/UserContext';
-import { BORDER_RADIUS, COLORS, FONT_SIZES, SPACING } from '../constants';
+import { BORDER_RADIUS, COLORS, FONT_SIZES, SPACING, STATUS_MESSAGES } from '../constants';
 
 // Import screens (we'll create these next)
 import SetupScreen from '../screens/SetupScreen';
@@ -54,6 +58,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 
 import { StorageKeys } from '../types';
 import type { AppSettings, RootStackParamList, DrawerParamList } from '../types';
+import type { DrawerContentComponentProps } from '@react-navigation/drawer';
 
 // ============================================================================
 // NAVIGATOR INSTANCES
@@ -93,9 +98,103 @@ async function saveOnboardingSeen(): Promise<void> {
   );
 }
 
+function getAvatarInitials(name?: string): string {
+  if (!name?.trim()) {
+    return 'LC';
+  }
+
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
+}
+
+function formatDrawerStatusTitle(status?: string): string {
+  if (!status) {
+    return STATUS_MESSAGES.insufficient_data.title;
+  }
+
+  return STATUS_MESSAGES[status as keyof typeof STATUS_MESSAGES]?.title ??
+    status.replace('_', ' ');
+}
+
 // ============================================================================
 // DRAWER NAVIGATOR (Main App Navigation)
 // ============================================================================
+
+/**
+ * Custom drawer content with a compact pregnancy and HRV summary.
+ */
+function CustomDrawerContent(props: DrawerContentComponentProps): JSX.Element {
+  const {
+    profile,
+    currentGestationalWeek,
+    currentGestationalDay,
+    hrvReadings,
+    latestReading,
+    analysisResult,
+  } = useUser();
+  const displayName = profile?.name?.trim() || 'Labor Cue';
+  const gestationalLabel = currentGestationalWeek > 0
+    ? `Week ${currentGestationalWeek}, Day ${currentGestationalDay}`
+    : 'Pregnancy timeline';
+  const latestHrvLabel = latestReading ? `${latestReading.hrvValue.toFixed(1)} ms` : '--';
+  const statusLabel = formatDrawerStatusTitle(analysisResult?.inversionStatus);
+
+  return (
+    <DrawerContentScrollView
+      {...props}
+      contentContainerStyle={styles.drawerContentContainer}
+    >
+      <View style={styles.drawerHeader} testID="custom-drawer-header">
+        <View style={styles.drawerProfileRow}>
+          <View
+            style={styles.drawerAvatar}
+            accessibilityLabel={`${displayName} avatar`}
+            testID="drawer-avatar"
+          >
+            <Text style={styles.drawerAvatarText}>
+              {getAvatarInitials(profile?.name)}
+            </Text>
+          </View>
+
+          <View style={styles.drawerProfileText}>
+            <Text style={styles.drawerName} numberOfLines={1}>
+              {displayName}
+            </Text>
+            <Text style={styles.drawerGestationalWeek}>
+              {gestationalLabel}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.drawerStatsGrid}>
+          <View style={styles.drawerStat}>
+            <Text style={styles.drawerStatValue}>{hrvReadings.length}</Text>
+            <Text style={styles.drawerStatLabel}>Readings</Text>
+          </View>
+          <View style={styles.drawerStat}>
+            <Text style={styles.drawerStatValue}>{latestHrvLabel}</Text>
+            <Text style={styles.drawerStatLabel}>Latest HRV</Text>
+          </View>
+        </View>
+
+        <View style={styles.drawerStatusPill}>
+          <Text style={styles.drawerStatusLabel}>Current status</Text>
+          <Text style={styles.drawerStatusValue} numberOfLines={1}>
+            {statusLabel}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.drawerItems}>
+        <DrawerItemList {...props} />
+      </View>
+    </DrawerContentScrollView>
+  );
+}
 
 /**
  * Main drawer navigation with Home, Data, and Settings screens
@@ -104,6 +203,7 @@ function MainDrawerNavigator(): JSX.Element {
   return (
     <Drawer.Navigator
       initialRouteName="Home"
+      drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
         headerStyle: {
           backgroundColor: COLORS.primary,
@@ -456,5 +556,90 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: FONT_SIZES.md,
     fontWeight: '700',
+  },
+  drawerContentContainer: {
+    flexGrow: 1,
+    backgroundColor: COLORS.background,
+    paddingTop: 0,
+  },
+  drawerHeader: {
+    backgroundColor: COLORS.primary,
+    padding: SPACING.lg,
+    paddingTop: SPACING.xl,
+  },
+  drawerProfileRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: SPACING.md,
+    marginBottom: SPACING.lg,
+  },
+  drawerAvatar: {
+    alignItems: 'center',
+    backgroundColor: COLORS.textLight,
+    borderRadius: BORDER_RADIUS.round,
+    height: 56,
+    justifyContent: 'center',
+    width: 56,
+  },
+  drawerAvatarText: {
+    color: COLORS.primaryDark,
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+  },
+  drawerProfileText: {
+    flex: 1,
+  },
+  drawerName: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '700',
+  },
+  drawerGestationalWeek: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.sm,
+    marginTop: SPACING.xs,
+    opacity: 0.9,
+  },
+  drawerStatsGrid: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  drawerStat: {
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderRadius: BORDER_RADIUS.md,
+    flex: 1,
+    padding: SPACING.md,
+  },
+  drawerStatValue: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+  },
+  drawerStatLabel: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.xs,
+    marginTop: SPACING.xs,
+    opacity: 0.85,
+  },
+  drawerStatusPill: {
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+  },
+  drawerStatusLabel: {
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  drawerStatusValue: {
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    marginTop: SPACING.xs,
+  },
+  drawerItems: {
+    paddingTop: SPACING.sm,
   },
 });
