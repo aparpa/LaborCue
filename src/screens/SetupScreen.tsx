@@ -68,14 +68,10 @@ import {
   calculateStartDateFromDueDate,
   parseFlexibleDate,
 } from '../utils/dateUtils';
+import { createNewProfile } from '../services/storage';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, MINIMUM_TRACKING_WEEK } from '../constants';
 
 type SetupMethod = 'weeks' | 'dueDate';
-type FieldErrors = {
-  weeksPregnant?: string;
-  daysPregnant?: string;
-  dueDateInput?: string;
-};
 
 export default function SetupScreen(): JSX.Element {
   const [name, setName] = useState('');
@@ -86,58 +82,46 @@ export default function SetupScreen(): JSX.Element {
   const [providerName, setProviderName] = useState('');
   const [providerContact, setProviderContact] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [earlyPregnancyNotice, setEarlyPregnancyNotice] = useState<string | null>(null);
   // STORY-805 start: load health app data here and prefill relevant fields.
   
   const { setProfile, completeSetup } = useUser();
   
   function validateInputs(): boolean {
-    const nextErrors: FieldErrors = {};
-    setEarlyPregnancyNotice(null);
-
+    // STORY-802 start: replace Alert-based validation with inline field errors.
     if (setupMethod === 'weeks') {
       const weeks = parseInt(weeksPregnant, 10);
       if (isNaN(weeks) || weeks < 1 || weeks > 42) {
-        nextErrors.weeksPregnant = 'Please enter weeks between 1 and 42.';
+        Alert.alert('Invalid Input', 'Please enter weeks between 1 and 42.');
+        return false;
       }
       
       const days = daysPregnant ? parseInt(daysPregnant, 10) : 0;
-      if (isNaN(days) || days < 0 || days > 6) {
-        nextErrors.daysPregnant = 'Days should be between 0 and 6.';
+      if (days < 0 || days > 6) {
+        Alert.alert('Invalid Input', 'Days should be between 0 and 6.');
+        return false;
       }
       
-      if (
-        !nextErrors.weeksPregnant &&
-        typeof weeks === 'number' &&
-        !isNaN(weeks) &&
-        weeks < MINIMUM_TRACKING_WEEK
-      ) {
-        setEarlyPregnancyNotice(
+      if (weeks < MINIMUM_TRACKING_WEEK) {
+        Alert.alert(
+          'Early Pregnancy',
           `This app is designed for tracking from week ${MINIMUM_TRACKING_WEEK} onwards. ` +
-            `You can still set up now, but HRV tracking will begin at week ${MINIMUM_TRACKING_WEEK}.`
+          `You can still set up now, but HRV tracking will begin at week ${MINIMUM_TRACKING_WEEK}.`
         );
       }
     } else {
       const parsedDate = parseFlexibleDate(dueDateInput);
       if (!parsedDate) {
-        nextErrors.dueDateInput = 'Please enter a valid due date (MM/DD/YYYY).';
+        Alert.alert('Invalid Date', 'Please enter a valid due date (MM/DD/YYYY).');
+        return false;
       }
       
-      if (parsedDate) {
-        const dueDate = new Date(parsedDate);
-        const today = new Date();
-        dueDate.setHours(0, 0, 0, 0);
-        today.setHours(0, 0, 0, 0);
-
-        if (dueDate < today) {
-          nextErrors.dueDateInput = 'Due date cannot be in the past.';
-        }
+      if (parsedDate < new Date()) {
+        Alert.alert('Invalid Date', 'Due date cannot be in the past.');
+        return false;
       }
     }
-
-    setFieldErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+    
+    return true;
   }
   
   async function handleSubmit(): Promise<void> {
@@ -159,8 +143,6 @@ export default function SetupScreen(): JSX.Element {
         estimatedDueDate = parsedDate.toISOString();
         pregnancyStartDate = calculateStartDateFromDueDate(estimatedDueDate);
       }
-
-      const { createNewProfile } = await import('../services/storage');
       
       const profile = createNewProfile(
         pregnancyStartDate,
@@ -229,11 +211,7 @@ export default function SetupScreen(): JSX.Element {
                 styles.toggleButton,
                 setupMethod === 'weeks' && styles.toggleButtonActive,
               ]}
-              onPress={() => {
-                setSetupMethod('weeks');
-                setFieldErrors({});
-                setEarlyPregnancyNotice(null);
-              }}
+              onPress={() => setSetupMethod('weeks')}
             >
               <Text
                 style={[
@@ -249,11 +227,7 @@ export default function SetupScreen(): JSX.Element {
                 styles.toggleButton,
                 setupMethod === 'dueDate' && styles.toggleButtonActive,
               ]}
-              onPress={() => {
-                setSetupMethod('dueDate');
-                setFieldErrors({});
-                setEarlyPregnancyNotice(null);
-              }}
+              onPress={() => setSetupMethod('dueDate')}
             >
               <Text
                 style={[
@@ -272,51 +246,28 @@ export default function SetupScreen(): JSX.Element {
               <View style={styles.weekInput}>
                 <Text style={styles.inputLabel}>Weeks</Text>
                 <TextInput
-                  style={[
-                    styles.input,
-                    fieldErrors.weeksPregnant ? styles.inputError : null,
-                  ]}
+                  style={styles.input}
                   value={weeksPregnant}
-                  onChangeText={(value) => {
-                    setWeeksPregnant(value);
-                    if (fieldErrors.weeksPregnant) {
-                      setFieldErrors((prev) => ({ ...prev, weeksPregnant: undefined }));
-                    }
-                  }}
+                  onChangeText={setWeeksPregnant}
                   placeholder="24"
                   placeholderTextColor={COLORS.textSecondary}
                   keyboardType="number-pad"
                   maxLength={2}
                 />
-                {fieldErrors.weeksPregnant ? (
-                  <Text style={styles.errorText}>{fieldErrors.weeksPregnant}</Text>
-                ) : null}
-                {earlyPregnancyNotice ? (
-                  <Text style={styles.noticeText}>{earlyPregnancyNotice}</Text>
-                ) : null}
+                {/* STORY-802 start: show weeks validation error here. */}
               </View>
               <View style={styles.dayInput}>
                 <Text style={styles.inputLabel}>Days (0-6)</Text>
                 <TextInput
-                  style={[
-                    styles.input,
-                    fieldErrors.daysPregnant ? styles.inputError : null,
-                  ]}
+                  style={styles.input}
                   value={daysPregnant}
-                  onChangeText={(value) => {
-                    setDaysPregnant(value);
-                    if (fieldErrors.daysPregnant) {
-                      setFieldErrors((prev) => ({ ...prev, daysPregnant: undefined }));
-                    }
-                  }}
+                  onChangeText={setDaysPregnant}
                   placeholder="0"
                   placeholderTextColor={COLORS.textSecondary}
                   keyboardType="number-pad"
                   maxLength={1}
                 />
-                {fieldErrors.daysPregnant ? (
-                  <Text style={styles.errorText}>{fieldErrors.daysPregnant}</Text>
-                ) : null}
+                {/* STORY-802 start: show days validation error here. */}
               </View>
             </View>
           ) : (
@@ -324,23 +275,13 @@ export default function SetupScreen(): JSX.Element {
               <Text style={styles.inputLabel}>Expected Due Date</Text>
               {/* STORY-801 start: replace this TextInput with a date picker. */}
               <TextInput
-                style={[
-                  styles.input,
-                  fieldErrors.dueDateInput ? styles.inputError : null,
-                ]}
+                style={styles.input}
                 value={dueDateInput}
-                onChangeText={(value) => {
-                  setDueDateInput(value);
-                  if (fieldErrors.dueDateInput) {
-                    setFieldErrors((prev) => ({ ...prev, dueDateInput: undefined }));
-                  }
-                }}
+                onChangeText={setDueDateInput}
                 placeholder="MM/DD/YYYY"
                 placeholderTextColor={COLORS.textSecondary}
               />
-              {fieldErrors.dueDateInput ? (
-                <Text style={styles.errorText}>{fieldErrors.dueDateInput}</Text>
-              ) : null}
+              {/* STORY-802 start: show due date validation error here. */}
             </View>
           )}
         </View>
@@ -442,19 +383,6 @@ const styles = StyleSheet.create({
   },
   inputMarginTop: {
     marginTop: SPACING.md,
-  },
-  inputError: {
-    borderColor: COLORS.danger,
-  },
-  errorText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.danger,
-    marginTop: SPACING.xs,
-  },
-  noticeText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.warning,
-    marginTop: SPACING.xs,
   },
   toggleContainer: {
     flexDirection: 'row',
