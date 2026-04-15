@@ -262,8 +262,8 @@ function LoadingScreen(): JSX.Element {
 function RootNavigator(): JSX.Element {
   const { isLoading, isFirstLaunch } = useUser();
   const [shouldShowOnboarding, setShouldShowOnboarding] = useState(false);
+  const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(false);
   const wasFirstLaunchRef = useRef(isFirstLaunch);
-  const hasCompletedInitialLoadRef = useRef(false);
 
   useEffect(() => {
     if (isLoading) {
@@ -271,35 +271,47 @@ function RootNavigator(): JSX.Element {
       return;
     }
 
-    if (!hasCompletedInitialLoadRef.current) {
-      hasCompletedInitialLoadRef.current = true;
+    if (isFirstLaunch) {
+      setShouldShowOnboarding(false);
+      setIsCheckingOnboarding(false);
       wasFirstLaunchRef.current = isFirstLaunch;
       return;
     }
 
-    const setupJustCompleted = wasFirstLaunchRef.current && !isFirstLaunch;
     wasFirstLaunchRef.current = isFirstLaunch;
-
-    if (!setupJustCompleted) {
-      return;
-    }
+    let isMounted = true;
 
     async function prepareOnboarding(): Promise<void> {
+      setIsCheckingOnboarding(true);
+
       try {
         const rawSettings = await AsyncStorage.getItem(StorageKeys.APP_SETTINGS);
         const settings = rawSettings ? JSON.parse(rawSettings) as Partial<AppSettings> : {};
-        setShouldShowOnboarding(settings.hasSeenOnboardingCarousel !== true);
+
+        if (isMounted) {
+          setShouldShowOnboarding(settings.hasSeenOnboardingCarousel !== true);
+        }
       } catch (error) {
         console.error('Failed to load onboarding state:', error);
-        setShouldShowOnboarding(true);
+        if (isMounted) {
+          setShouldShowOnboarding(true);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingOnboarding(false);
+        }
       }
     }
 
     void prepareOnboarding();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isFirstLaunch, isLoading]);
   
   // Show loading screen while checking initial state
-  if (isLoading) {
+  if (isLoading || isCheckingOnboarding) {
     return <LoadingScreen />;
   }
   

@@ -202,20 +202,31 @@ describe('AppNavigator STORY-704', () => {
     expect(screen.getByText('Home Screen')).toBeTruthy();
   });
 
-  it('does not show onboarding during a normal returning-user launch', async () => {
+  it('shows onboarding on a later launch if setup finished but the tutorial was never dismissed', async () => {
     // Arrange
-    mockUserContext(true, true);
-    const rendered = render(<AppNavigator />);
-
-    // Act
+    mockAsyncStorageGetItem.mockResolvedValue(null);
     mockUserContext(false);
-    rendered.rerender(<AppNavigator />);
+
+    render(<AppNavigator />);
+
+    // Assert
+    expect(await screen.findByTestId('onboarding-carousel')).toBeTruthy();
+    expect(screen.getByText('Wear your device overnight')).toBeTruthy();
+  });
+
+  it('does not show onboarding during a normal returning-user launch after it was already dismissed', async () => {
+    // Arrange
+    mockAsyncStorageGetItem.mockResolvedValue(
+      JSON.stringify({ hasSeenOnboardingCarousel: true })
+    );
+    mockUserContext(false);
+
+    render(<AppNavigator />);
 
     // Assert
     await waitFor(() => {
       expect(screen.queryByTestId('onboarding-carousel')).toBeNull();
     });
     expect(screen.getByText('Home Screen')).toBeTruthy();
-    expect(mockAsyncStorageGetItem).not.toHaveBeenCalled();
   });
 });
