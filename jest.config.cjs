@@ -18,7 +18,4 @@ module.exports = {
   transformIgnorePatterns: [
     "node_modules/(?!(jest-)?react-native|@react-native|@react-navigation|react-native-chart-kit|react-native-svg|@testing-library)",
   ],
-  moduleNameMapper: {
-    "^@react-native-community/datetimepicker$": "<rootDir>/tests/mocks/DateTimePickerMock.tsx",
-  },
 };

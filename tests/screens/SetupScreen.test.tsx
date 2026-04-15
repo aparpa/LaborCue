@@ -13,26 +13,45 @@ jest.mock('../../src/context/UserContext', () => ({
   }),
 }));
 
+jest.mock('@react-native-community/datetimepicker', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  const MockPicker = (props: any) => <Text testID="date-time-picker" {...props} />;
+  return {
+    
+    __esModule: true,
+    default: MockPicker,
+  };
+});
+
 // ============================================================================
 // STORY-801 TESTS
 // ============================================================================
 
 describe('SetupScreen STORY-801', () => {
-  it('shows the due date text input when the Due Date toggle is selected', () => {
-    const { getByText, getByPlaceholderText } = render(<SetupScreen />);
+  it('shows a date picker when the due date field is pressed', () => {
+    // Arrange
+    const { getByText, queryByTestId } = render(<SetupScreen />);
 
+    // Act
     fireEvent.press(getByText('Due Date'));
+    fireEvent.press(getByText('Select a date'));
 
-    expect(getByPlaceholderText('MM/DD/YYYY')).toBeTruthy();
+    // Assert
+    expect(queryByTestId('date-time-picker')).toBeTruthy();
   });
 
   it('updates the due date display after selecting a date', () => {
-    const { getByText, getByPlaceholderText, getByDisplayValue } = render(<SetupScreen />);
+    // Arrange
+    const { getByText, getByTestId } = render(<SetupScreen />);
     const selectedDate = new Date(2026, 1, 10);
-    fireEvent.press(getByText('Due Date'));
-    const dueInput = getByPlaceholderText('MM/DD/YYYY');
-    fireEvent.changeText(dueInput, '02/10/2026');
 
-    expect(getByDisplayValue('02/10/2026')).toBeTruthy();
+    // Act
+    fireEvent.press(getByText('Due Date'));
+    fireEvent.press(getByText('Select a date'));
+    fireEvent(getByTestId('date-time-picker'), 'onChange', { type: 'set' }, selectedDate);
+
+    // Assert
+    expect(getByText('02/10/2026')).toBeTruthy();
   });
 });
