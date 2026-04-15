@@ -47,7 +47,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
 | STORY-402 | Add confidence intervals to predictions | 5 | High | `hrvAnalysis.ts` |Leah |
-| STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | Aditya |
+| STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | |
 | STORY-1003 | Highlight inflection point on chart | 3 | High | `DataScreen.tsx` |Roshni|
 | STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` |Faduma |
 | STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` |Emma |
@@ -65,8 +65,8 @@ This document organizes all development tasks into an Agile-style backlog with e
 |----------|-------|--------|----------|------|----------|
 | STORY-803 | Multi-step setup with progress bar | 3 | Medium | `SetupScreen.tsx` |Emma |
 | STORY-806 | Keyboard avoiding improvements | 2 | Medium | `SetupScreen.tsx` |Emma |
-| STORY-704 | Onboarding tutorial carousel | 3 | Medium | `AppNavigator.tsx` |Emma |
-| STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` | Emma|
+| STORY-704 | Onboarding tutorial carousel | 3 | Medium | `AppNavigator.tsx` | |
+| STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` | |
 | STORY-902 | Animated status transitions | 3 | Medium | `HomeScreen.tsx` | Leah|
 | STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | Emma|
 | STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` |Emma |
