@@ -57,13 +57,30 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SQLite from 'expo-sqlite';
 import { v4 as uuidv4 } from 'uuid';
+import { format, parseISO } from 'date-fns';
 import {
   UserProfile,
   HRVReading,
   AppSettings,
-  StorageKeys
+  StorageKeys,
+  HRVAnalysisResult
 } from '../types';
-import { DATABASE_NAME, MAX_STORED_READINGS } from '../constants';
+import { COLORS, DATABASE_NAME, MAX_STORED_READINGS } from '../constants';
+import { analyzeHRV, getStatusSummary } from './hrvAnalysis';
+
+type AsyncStorageModule = {
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  multiRemove: (keys: string[]) => Promise<void>;
+  default?: AsyncStorageModule;
+};
+
+const storageBackend: AsyncStorageModule = (
+  (AsyncStorage as unknown as AsyncStorageModule).getItem
+    ? (AsyncStorage as unknown as AsyncStorageModule)
+    : ((AsyncStorage as unknown as AsyncStorageModule).default ??
+      (AsyncStorage as unknown as AsyncStorageModule))
+);
 
 // ============================================================================
 // DATABASE INITIALIZATION
@@ -128,7 +145,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
       ...profile,
       updatedAt: new Date().toISOString()
     };
-    await AsyncStorage.setItem(
+    await storageBackend.setItem(
       StorageKeys.USER_PROFILE,
       JSON.stringify(updatedProfile)
     );
@@ -145,7 +162,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 // STORY-501 start: decrypt the stored payload before JSON.parse.
 export async function loadUserProfile(): Promise<UserProfile | null> {
   try {
-    const data = await AsyncStorage.getItem(StorageKeys.USER_PROFILE);
+    const data = await storageBackend.getItem(StorageKeys.USER_PROFILE);
     if (data) {
       return JSON.parse(data) as UserProfile;
     }
@@ -433,7 +450,7 @@ const DEFAULT_SETTINGS: AppSettings = {
  */
 export async function saveAppSettings(settings: AppSettings): Promise<void> {
   try {
-    await AsyncStorage.setItem(
+    await storageBackend.setItem(
       StorageKeys.APP_SETTINGS,
       JSON.stringify(settings)
     );
@@ -448,7 +465,7 @@ export async function saveAppSettings(settings: AppSettings): Promise<void> {
  */
 export async function loadAppSettings(): Promise<AppSettings> {
   try {
-    const data = await AsyncStorage.getItem(StorageKeys.APP_SETTINGS);
+    const data = await storageBackend.getItem(StorageKeys.APP_SETTINGS);
     if (data) {
       return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
     }
@@ -468,7 +485,7 @@ export async function loadAppSettings(): Promise<AppSettings> {
  */
 export async function recordLastSync(): Promise<void> {
   try {
-    await AsyncStorage.setItem(
+    await storageBackend.setItem(
       StorageKeys.LAST_SYNC,
       new Date().toISOString()
     );
@@ -482,7 +499,7 @@ export async function recordLastSync(): Promise<void> {
  */
 export async function getLastSyncTime(): Promise<string | null> {
   try {
-    return await AsyncStorage.getItem(StorageKeys.LAST_SYNC);
+    return await storageBackend.getItem(StorageKeys.LAST_SYNC);
   } catch (error) {
     console.error('Failed to get last sync time:', error);
     return null;
@@ -526,8 +543,343 @@ export async function exportDataAsCSV(): Promise<string> {
   return header + rows;
 }
 
-// STORY-506 start: add PDF export generation here, reusing the chart
-// rendering/data used on the Data screen.
+type PrintToFileOptions = {
+  html: string;
+  base64?: boolean;
+  width?: number;
+  height?: number;
+};
+
+type PrintModule = {
+  printToFileAsync: (options: PrintToFileOptions) => Promise<{ uri: string }>;
+};
+
+interface PDFExportContext {
+  profile: UserProfile | null;
+  readings: HRVReading[];
+  analysis: HRVAnalysisResult | null;
+  exportedAt: string;
+}
+
+const PDF_CHART_WIDTH = 720;
+const PDF_CHART_HEIGHT = 240;
+const PDF_CHART_PADDING_X = 48;
+const PDF_CHART_PADDING_Y = 28;
+
+declare const require: (moduleName: string) => unknown;
+
+function loadPrintModule(): PrintModule {
+  return require('expo-print') as PrintModule;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatDisplayDate(timestamp: string): string {
+  return format(parseISO(timestamp), 'MMM d, yyyy');
+}
+
+function getFallbackDueDate(readings: HRVReading[]): string {
+  if (readings.length === 0) {
+    return new Date().toISOString();
+  }
+
+  const latest = readings.reduce((currentLatest, reading) =>
+    new Date(reading.timestamp).getTime() > new Date(currentLatest.timestamp).getTime()
+      ? reading
+      : currentLatest
+  );
+
+  const dueDate = new Date(latest.timestamp);
+  dueDate.setDate(dueDate.getDate() + Math.max(0, 40 - latest.gestationalWeek) * 7);
+  return dueDate.toISOString();
+}
+
+function buildChartPath(readings: HRVReading[]): string {
+  if (readings.length === 0) {
+    return '';
+  }
+
+  if (readings.length === 1) {
+    const centerX = PDF_CHART_WIDTH / 2;
+    const centerY = PDF_CHART_HEIGHT / 2;
+    return `M ${centerX} ${centerY}`;
+  }
+
+  const values = readings.map(reading => reading.hrvValue);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const yRange = maxValue - minValue || 1;
+  const xStep = (PDF_CHART_WIDTH - PDF_CHART_PADDING_X * 2) / (readings.length - 1);
+  const yScale = (PDF_CHART_HEIGHT - PDF_CHART_PADDING_Y * 2) / yRange;
+
+  return readings
+    .map((reading, index) => {
+      const x = PDF_CHART_PADDING_X + xStep * index;
+      const y =
+        PDF_CHART_HEIGHT - PDF_CHART_PADDING_Y - (reading.hrvValue - minValue) * yScale;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(' ');
+}
+
+function buildChartSvg(readings: HRVReading[]): string {
+  if (readings.length === 0) {
+    return `
+      <div class="empty-state">
+        No HRV readings are available yet, so the chart could not be generated.
+      </div>
+    `;
+  }
+
+  const values = readings.map(reading => reading.hrvValue);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const firstReading = readings[0];
+  const lastReading = readings[readings.length - 1];
+
+  return `
+    <svg viewBox="0 0 ${PDF_CHART_WIDTH} ${PDF_CHART_HEIGHT}" class="chart" role="img" aria-label="HRV trend chart">
+      <rect x="0" y="0" width="${PDF_CHART_WIDTH}" height="${PDF_CHART_HEIGHT}" rx="18" fill="#FFFFFF" />
+      <line x1="${PDF_CHART_PADDING_X}" y1="${PDF_CHART_PADDING_Y}" x2="${PDF_CHART_PADDING_X}" y2="${PDF_CHART_HEIGHT - PDF_CHART_PADDING_Y}" stroke="${COLORS.chartGrid}" stroke-width="2" />
+      <line x1="${PDF_CHART_PADDING_X}" y1="${PDF_CHART_HEIGHT - PDF_CHART_PADDING_Y}" x2="${PDF_CHART_WIDTH - PDF_CHART_PADDING_X}" y2="${PDF_CHART_HEIGHT - PDF_CHART_PADDING_Y}" stroke="${COLORS.chartGrid}" stroke-width="2" />
+      <path d="${buildChartPath(readings)}" fill="none" stroke="${COLORS.chartLine}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+      <text x="${PDF_CHART_PADDING_X}" y="20" class="chart-label">Min ${minValue.toFixed(1)} ms</text>
+      <text x="${PDF_CHART_WIDTH - PDF_CHART_PADDING_X}" y="20" text-anchor="end" class="chart-label">Max ${maxValue.toFixed(1)} ms</text>
+      <text x="${PDF_CHART_PADDING_X}" y="${PDF_CHART_HEIGHT - 8}" class="chart-label">${escapeHtml(formatDisplayDate(firstReading.timestamp))}</text>
+      <text x="${PDF_CHART_WIDTH - PDF_CHART_PADDING_X}" y="${PDF_CHART_HEIGHT - 8}" text-anchor="end" class="chart-label">${escapeHtml(formatDisplayDate(lastReading.timestamp))}</text>
+    </svg>
+  `;
+}
+
+function buildRecommendations(analysis: HRVAnalysisResult | null): string[] {
+  if (!analysis) {
+    return [
+      'Continue collecting readings consistently to unlock analysis trends.',
+      'Review the report with your care team if you notice sudden changes in symptoms.',
+    ];
+  }
+
+  return [
+    analysis.recommendation ?? 'Continue following your current monitoring plan.',
+    analysis.predictedDeliveryWindow
+      ? `Predicted delivery window: ${formatDisplayDate(analysis.predictedDeliveryWindow.earliest)} to ${formatDisplayDate(analysis.predictedDeliveryWindow.latest)}.`
+      : 'Prediction window is not yet available because more trend data is needed.',
+  ];
+}
+
+function buildPDFReportHtml(context: PDFExportContext): string {
+  const { profile, readings, analysis, exportedAt } = context;
+  const latestReading = readings[readings.length - 1] ?? null;
+  const recommendations = buildRecommendations(analysis);
+  const summary = analysis ? getStatusSummary(analysis) : 'More HRV readings are needed before analysis can be included in the report.';
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <title>Labor Cue HRV Report</title>
+        <style>
+          body {
+            font-family: Helvetica, Arial, sans-serif;
+            color: #212121;
+            margin: 0;
+            padding: 32px;
+            background: #f7f7fb;
+          }
+          .report {
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 20px;
+            padding: 32px;
+          }
+          h1, h2 {
+            margin: 0 0 12px;
+          }
+          h1 {
+            color: ${COLORS.primaryDark};
+            font-size: 28px;
+          }
+          h2 {
+            font-size: 18px;
+            color: ${COLORS.textPrimary};
+            margin-top: 28px;
+          }
+          p, li {
+            font-size: 14px;
+            line-height: 1.5;
+          }
+          .meta-grid {
+            display: table;
+            width: 100%;
+            margin-top: 20px;
+          }
+          .meta-row {
+            display: table-row;
+          }
+          .meta-cell {
+            display: table-cell;
+            padding: 8px 12px 8px 0;
+            vertical-align: top;
+          }
+          .meta-label {
+            color: ${COLORS.textSecondary};
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }
+          .meta-value {
+            font-size: 15px;
+            font-weight: 600;
+          }
+          .chart {
+            width: 100%;
+            margin-top: 16px;
+          }
+          .chart-label {
+            fill: ${COLORS.textSecondary};
+            font-size: 12px;
+          }
+          .summary-card {
+            background: ${COLORS.backgroundSecondary};
+            border-left: 6px solid ${COLORS.primary};
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-top: 16px;
+          }
+          .empty-state {
+            padding: 24px;
+            border-radius: 12px;
+            background: ${COLORS.backgroundSecondary};
+            margin-top: 16px;
+            color: ${COLORS.textSecondary};
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+            font-size: 13px;
+          }
+          th, td {
+            border-bottom: 1px solid #ececf2;
+            padding: 10px 8px;
+            text-align: left;
+          }
+          th {
+            color: ${COLORS.textSecondary};
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 0.06em;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="report">
+          <h1>Labor Cue HRV Report</h1>
+          <p>Exported on ${escapeHtml(formatDisplayDate(exportedAt))}</p>
+
+          <div class="meta-grid">
+            <div class="meta-row">
+              <div class="meta-cell">
+                <div class="meta-label">Profile</div>
+                <div class="meta-value">${escapeHtml(profile?.name || 'Patient')}</div>
+              </div>
+              <div class="meta-cell">
+                <div class="meta-label">Due Date</div>
+                <div class="meta-value">${escapeHtml(profile ? formatDisplayDate(profile.estimatedDueDate) : 'Not provided')}</div>
+              </div>
+              <div class="meta-cell">
+                <div class="meta-label">Readings</div>
+                <div class="meta-value">${readings.length}</div>
+              </div>
+              <div class="meta-cell">
+                <div class="meta-label">Latest Reading</div>
+                <div class="meta-value">${latestReading ? `${latestReading.hrvValue.toFixed(1)} ms` : 'N/A'}</div>
+              </div>
+            </div>
+          </div>
+
+          <h2>HRV Chart</h2>
+          ${buildChartSvg(readings)}
+
+          <h2>Analysis Summary</h2>
+          <div class="summary-card">
+            <p>${escapeHtml(summary)}</p>
+          </div>
+
+          <h2>Recommendations</h2>
+          <ul>
+            ${recommendations.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+          </ul>
+
+          <h2>Recent Readings</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Week</th>
+                <th>Day</th>
+                <th>HRV</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${readings.slice(-10).reverse().map(reading => `
+                <tr>
+                  <td>${escapeHtml(formatDisplayDate(reading.timestamp))}</td>
+                  <td>${reading.gestationalWeek}</td>
+                  <td>${reading.gestationalDay}</td>
+                  <td>${reading.hrvValue.toFixed(1)} ms</td>
+                  <td>${escapeHtml(reading.source)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+export async function exportDataAsPDF(): Promise<string> {
+  const readings = await getAllHRVReadings();
+  const profile = await loadUserProfile();
+  const exportedAt = new Date().toISOString();
+  const analysis = readings.length > 0
+    ? analyzeHRV(readings, profile?.estimatedDueDate ?? getFallbackDueDate(readings))
+    : null;
+  const html = buildPDFReportHtml({
+    profile,
+    readings,
+    analysis,
+    exportedAt,
+  });
+
+  const printModule = loadPrintModule();
+  const result = await printModule.printToFileAsync({
+    html,
+    base64: false,
+    width: 612,
+    height: 792,
+  });
+
+  return result.uri;
+}
+
+export const __testables = {
+  buildChartPath,
+  buildChartSvg,
+  buildPDFReportHtml,
+  buildRecommendations,
+  getFallbackDueDate,
+};
 
 // STORY-502 start: add cloud backup upload/download helpers here (opt-in
 // flow, encryption, and restore).
@@ -542,7 +894,7 @@ export async function exportDataAsCSV(): Promise<string> {
 export async function clearAllData(): Promise<void> {
   try {
     // Clear AsyncStorage
-    await AsyncStorage.multiRemove([
+    await storageBackend.multiRemove([
       StorageKeys.USER_PROFILE,
       StorageKeys.APP_SETTINGS,
       StorageKeys.LAST_SYNC
