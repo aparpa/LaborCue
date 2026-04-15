@@ -99,7 +99,7 @@ describe('UserContext optimistic updates (STORY-602)', () => {
   it('applies optimistic update and reconciles on success', async () => {
     let resolveSave: (reading: HRVReading) => void = () => {};
     mockStorage.saveHRVReading.mockImplementation(
-      (reading: Omit<HRVReading, 'id'>) =>
+      () =>
         new Promise<HRVReading>((resolve) => {
           resolveSave = (finalReading) => resolve(finalReading);
         })
