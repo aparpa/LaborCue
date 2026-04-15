@@ -49,7 +49,7 @@
  * =============================================================================
  */
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -60,6 +60,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { useUser } from '../context/UserContext';
 import {
@@ -77,6 +78,16 @@ type FieldErrors = {
   daysPregnant?: string;
   dueDateInput?: string;
 };
+type FocusableField =
+  | 'name'
+  | 'weeksPregnant'
+  | 'daysPregnant'
+  | 'dueDateInput'
+  | 'providerName'
+  | 'providerContact';
+
+const KEYBOARD_VERTICAL_OFFSET = Platform.OS === 'ios' ? SPACING.lg : 0;
+const KEYBOARD_SCROLL_PADDING = SPACING.xl;
 
 const SETUP_STEPS = [
   {
@@ -106,11 +117,52 @@ export default function SetupScreen(): JSX.Element {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [earlyPregnancyNotice, setEarlyPregnancyNotice] = useState<string | null>(null);
   // STORY-805 start: load health app data here and prefill relevant fields.
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const fieldPositions = useRef<Partial<Record<FocusableField, number>>>({});
+  const activeFieldRef = useRef<FocusableField | null>(null);
 
   const { setProfile, completeSetup } = useUser();
   const isLastStep = currentStep === SETUP_STEPS.length - 1;
   const progressPercentage = ((currentStep + 1) / SETUP_STEPS.length) * 100;
   const currentStepConfig = SETUP_STEPS[currentStep];
+
+  const scrollToField = useCallback((field: FocusableField) => {
+    const y = fieldPositions.current[field];
+    if (typeof y !== 'number') {
+      return;
+    }
+
+    scrollViewRef.current?.scrollTo({
+      y: Math.max(0, y - KEYBOARD_SCROLL_PADDING),
+      animated: true,
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleKeyboardShown = (): void => {
+      if (activeFieldRef.current) {
+        scrollToField(activeFieldRef.current);
+      }
+    };
+
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      handleKeyboardShown
+    );
+
+    return () => {
+      showSubscription.remove();
+    };
+  }, [scrollToField]);
+
+  function registerFieldPosition(field: FocusableField, y: number): void {
+    fieldPositions.current[field] = y;
+  }
+
+  function handleFieldFocus(field: FocusableField): void {
+    activeFieldRef.current = field;
+    scrollToField(field);
+  }
 
   function validateInputs(): boolean {
     const nextErrors: FieldErrors = {};
@@ -226,12 +278,13 @@ export default function SetupScreen(): JSX.Element {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={KEYBOARD_VERTICAL_OFFSET}
     >
-      {/* STORY-806 start: improve keyboard handling (scroll to focused input,
-          adjust offsets per platform). */}
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       >
         {/* STORY-803 start: insert multi-step progress UI here. */}
         <View style={styles.header}>
@@ -292,16 +345,22 @@ export default function SetupScreen(): JSX.Element {
 
           {currentStep === 0 && (
             <View>
-              <Text style={styles.inputLabel}>Your Name (optional)</Text>
-              {/* STORY-804 start: add a "Skip" action for optional fields here. */}
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="Enter your name"
-                placeholderTextColor={COLORS.textSecondary}
-              />
-              {/* STORY-802 start: show inline validation feedback below this input. */}
+              <View
+                onLayout={({ nativeEvent }) => registerFieldPosition('name', nativeEvent.layout.y)}
+              >
+                <Text style={styles.inputLabel}>Your Name (optional)</Text>
+                {/* STORY-804 start: add a "Skip" action for optional fields here. */}
+                <TextInput
+                  style={styles.input}
+                  value={name}
+                  onChangeText={setName}
+                  onFocus={() => handleFieldFocus('name')}
+                  placeholder="Enter your name"
+                  placeholderTextColor={COLORS.textSecondary}
+                  returnKeyType="next"
+                />
+                {/* STORY-802 start: show inline validation feedback below this input. */}
+              </View>
             </View>
           )}
 
@@ -354,58 +413,78 @@ export default function SetupScreen(): JSX.Element {
 
               {setupMethod === 'weeks' ? (
                 <View style={styles.weeksContainer}>
-                  <View style={styles.weekInput}>
-                    <Text style={styles.inputLabel}>Weeks</Text>
-                    <TextInput
-                      style={[
-                        styles.input,
-                        fieldErrors.weeksPregnant ? styles.inputError : null,
-                      ]}
-                      value={weeksPregnant}
-                      onChangeText={(value) => {
-                        setWeeksPregnant(value);
-                        if (fieldErrors.weeksPregnant) {
-                          setFieldErrors((prev) => ({ ...prev, weeksPregnant: undefined }));
-                        }
-                      }}
-                      placeholder="24"
-                      placeholderTextColor={COLORS.textSecondary}
-                      keyboardType="number-pad"
-                      maxLength={2}
-                    />
-                    {fieldErrors.weeksPregnant ? (
-                      <Text style={styles.errorText}>{fieldErrors.weeksPregnant}</Text>
-                    ) : null}
-                    {earlyPregnancyNotice ? (
-                      <Text style={styles.noticeText}>{earlyPregnancyNotice}</Text>
-                    ) : null}
+                <View style={styles.weekInput}>
+                    <View
+                      onLayout={({ nativeEvent }) =>
+                        registerFieldPosition('weeksPregnant', nativeEvent.layout.y)
+                      }
+                    >
+                      <Text style={styles.inputLabel}>Weeks</Text>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          fieldErrors.weeksPregnant ? styles.inputError : null,
+                        ]}
+                        value={weeksPregnant}
+                        onChangeText={(value) => {
+                          setWeeksPregnant(value);
+                          if (fieldErrors.weeksPregnant) {
+                            setFieldErrors((prev) => ({ ...prev, weeksPregnant: undefined }));
+                          }
+                        }}
+                        onFocus={() => handleFieldFocus('weeksPregnant')}
+                        placeholder="24"
+                        placeholderTextColor={COLORS.textSecondary}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        returnKeyType="next"
+                      />
+                      {fieldErrors.weeksPregnant ? (
+                        <Text style={styles.errorText}>{fieldErrors.weeksPregnant}</Text>
+                      ) : null}
+                      {earlyPregnancyNotice ? (
+                        <Text style={styles.noticeText}>{earlyPregnancyNotice}</Text>
+                      ) : null}
+                    </View>
                   </View>
                   <View style={styles.dayInput}>
-                    <Text style={styles.inputLabel}>Days (0-6)</Text>
-                    <TextInput
-                      style={[
-                        styles.input,
-                        fieldErrors.daysPregnant ? styles.inputError : null,
-                      ]}
-                      value={daysPregnant}
-                      onChangeText={(value) => {
-                        setDaysPregnant(value);
-                        if (fieldErrors.daysPregnant) {
-                          setFieldErrors((prev) => ({ ...prev, daysPregnant: undefined }));
-                        }
-                      }}
-                      placeholder="0"
-                      placeholderTextColor={COLORS.textSecondary}
-                      keyboardType="number-pad"
-                      maxLength={1}
-                    />
-                    {fieldErrors.daysPregnant ? (
-                      <Text style={styles.errorText}>{fieldErrors.daysPregnant}</Text>
-                    ) : null}
+                    <View
+                      onLayout={({ nativeEvent }) =>
+                        registerFieldPosition('daysPregnant', nativeEvent.layout.y)
+                      }
+                    >
+                      <Text style={styles.inputLabel}>Days (0-6)</Text>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          fieldErrors.daysPregnant ? styles.inputError : null,
+                        ]}
+                        value={daysPregnant}
+                        onChangeText={(value) => {
+                          setDaysPregnant(value);
+                          if (fieldErrors.daysPregnant) {
+                            setFieldErrors((prev) => ({ ...prev, daysPregnant: undefined }));
+                          }
+                        }}
+                        onFocus={() => handleFieldFocus('daysPregnant')}
+                        placeholder="0"
+                        placeholderTextColor={COLORS.textSecondary}
+                        keyboardType="number-pad"
+                        maxLength={1}
+                        returnKeyType="done"
+                      />
+                      {fieldErrors.daysPregnant ? (
+                        <Text style={styles.errorText}>{fieldErrors.daysPregnant}</Text>
+                      ) : null}
+                    </View>
                   </View>
                 </View>
               ) : (
-                <View>
+                <View
+                  onLayout={({ nativeEvent }) =>
+                    registerFieldPosition('dueDateInput', nativeEvent.layout.y)
+                  }
+                >
                   <Text style={styles.inputLabel}>Expected Due Date</Text>
                   {/* STORY-801 start: replace this TextInput with a date picker. */}
                   <TextInput
@@ -420,8 +499,10 @@ export default function SetupScreen(): JSX.Element {
                         setFieldErrors((prev) => ({ ...prev, dueDateInput: undefined }));
                       }
                     }}
+                    onFocus={() => handleFieldFocus('dueDateInput')}
                     placeholder="MM/DD/YYYY"
                     placeholderTextColor={COLORS.textSecondary}
+                    returnKeyType="done"
                   />
                   {fieldErrors.dueDateInput ? (
                     <Text style={styles.errorText}>{fieldErrors.dueDateInput}</Text>
@@ -433,23 +514,39 @@ export default function SetupScreen(): JSX.Element {
 
           {currentStep === 2 && (
             <View>
-              <Text style={styles.inputLabel}>Healthcare Provider (optional)</Text>
-              {/* STORY-804 start: add a "Skip" action for provider info here. */}
-              <TextInput
-                style={styles.input}
-                value={providerName}
-                onChangeText={setProviderName}
-                placeholder="Provider name"
-                placeholderTextColor={COLORS.textSecondary}
-              />
-              <TextInput
-                style={[styles.input, styles.inputMarginTop]}
-                value={providerContact}
-                onChangeText={setProviderContact}
-                placeholder="Phone or email"
-                placeholderTextColor={COLORS.textSecondary}
-                keyboardType="email-address"
-              />
+              <View
+                onLayout={({ nativeEvent }) =>
+                  registerFieldPosition('providerName', nativeEvent.layout.y)
+                }
+              >
+                <Text style={styles.inputLabel}>Healthcare Provider (optional)</Text>
+                {/* STORY-804 start: add a "Skip" action for provider info here. */}
+                <TextInput
+                  style={styles.input}
+                  value={providerName}
+                  onChangeText={setProviderName}
+                  onFocus={() => handleFieldFocus('providerName')}
+                  placeholder="Provider name"
+                  placeholderTextColor={COLORS.textSecondary}
+                  returnKeyType="next"
+                />
+              </View>
+              <View
+                onLayout={({ nativeEvent }) =>
+                  registerFieldPosition('providerContact', nativeEvent.layout.y)
+                }
+              >
+                <TextInput
+                  style={[styles.input, styles.inputMarginTop]}
+                  value={providerContact}
+                  onChangeText={setProviderContact}
+                  onFocus={() => handleFieldFocus('providerContact')}
+                  placeholder="Phone or email"
+                  placeholderTextColor={COLORS.textSecondary}
+                  keyboardType="email-address"
+                  returnKeyType="done"
+                />
+              </View>
             </View>
           )}
         </View>
@@ -503,7 +600,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   scrollContent: {
+    flexGrow: 1,
     padding: SPACING.lg,
+    paddingBottom: SPACING.xxl,
   },
   header: {
     marginBottom: SPACING.xl,
