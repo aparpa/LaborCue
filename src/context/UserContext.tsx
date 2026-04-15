@@ -272,7 +272,7 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
   const addHRVReading = useCallback(async (
     reading: Omit<HRVReading, 'id'>
   ): Promise<void> => {
-    // If we don't yet have a profile, skip optimistic analysis but still persist
+    // If no profile, just persist without optimistic analysis
     if (!profile) {
       const savedReading = await saveHRVReading(reading);
       const updatedReadings = [...hrvReadings, savedReading].sort(
@@ -284,17 +284,15 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
 
     const previousReadings = hrvReadings;
     const previousAnalysis = analysisResult;
-
     const optimisticReading: HRVReading = {
       ...reading,
       id: `temp-${Date.now()}`,
     };
 
+    // Optimistic update
     const optimisticReadings = [...previousReadings, optimisticReading].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
-
-    // Optimistic UI update
     setHrvReadings(optimisticReadings);
     setAnalysisResult(analyzeHRV(optimisticReadings, profile.estimatedDueDate));
     setErrorMessage(null);

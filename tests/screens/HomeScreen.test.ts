@@ -29,9 +29,12 @@ jest.mock('../../src/components/StatusCard', () => {
   };
 });
 
+const mockTrendIndicator = jest.fn();
+
 jest.mock('../../src/components/TrendIndicator', () => {
   const React = require('react');
-  return function MockTrendIndicator(): JSX.Element {
+  return function MockTrendIndicator(props: Record<string, unknown>): JSX.Element {
+    mockTrendIndicator(props);
     return React.createElement('text', null, 'Trend Indicator');
   };
 });
@@ -48,6 +51,17 @@ jest.mock('react-native-svg', () => {
     Polyline: mock('Polyline'),
   };
 });
+
+const mockAsyncStorageGetItem = jest.fn();
+const mockAsyncStorageSetItem = jest.fn();
+
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: (...args: unknown[]) => mockAsyncStorageGetItem(...args),
+    setItem: (...args: unknown[]) => mockAsyncStorageSetItem(...args),
+  },
+}));
 
 const mockUseUser = jest.fn();
 
@@ -127,6 +141,21 @@ function renderHomeScreen(readings: HRVReading[]) {
 describe('HomeScreen STORY-903', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAsyncStorageGetItem.mockResolvedValue(
+      JSON.stringify({ hasSeenHomeCoachMarks: true })
+    );
+    mockAsyncStorageSetItem.mockResolvedValue(undefined);
+  });
+
+  it('passes the horizontal layout variant to TrendIndicator', () => {
+    // Arrange
+    renderHomeScreen(makeReadings(7));
+
+    // Assert
+    expect(mockTrendIndicator).toHaveBeenCalled();
+    expect(mockTrendIndicator.mock.calls[0][0]).toMatchObject({
+      layout: 'horizontal',
+    });
   });
 
   it('renders a mini sparkline section alongside trend information', () => {

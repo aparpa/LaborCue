@@ -65,6 +65,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
@@ -74,13 +75,43 @@ import StatusCard from '../components/StatusCard';
 import TrendIndicator from '../components/TrendIndicator';
 import { formatGestationalAge, formatDate, getTimeUntil } from '../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants';
-import { InversionStatus } from '../types';
+import { InversionStatus, StorageKeys } from '../types';
 import type { DrawerParamList, HRVReading } from '../types';
 
 type HomeScreenNavigationProp = DrawerNavigationProp<DrawerParamList, 'Home'>;
 const SPARKLINE_WIDTH = 96;
 const SPARKLINE_HEIGHT = 40;
 const SPARKLINE_PADDING = 4;
+const HOME_TIPS_SETTING_KEY = 'hasSeenHomeCoachMarks';
+
+const HOME_COACH_MARKS = [
+  {
+    key: 'status',
+    title: 'Start with your status',
+    body:
+      'This card summarizes whether your recent HRV pattern looks on track and what to do next.',
+  },
+  {
+    key: 'trend',
+    title: 'Review the trend',
+    body:
+      'Use this section to spot whether HRV is rising, falling, or steady across your recent readings.',
+  },
+  {
+    key: 'summary',
+    title: 'Check your quick summary',
+    body:
+      'These totals help you confirm how much data has been collected and your average HRV so far.',
+  },
+  {
+    key: 'cta',
+    title: 'Open your full data',
+    body:
+      'Tap here anytime to dig into charts, detailed readings, and a closer look at your history.',
+  },
+] as const;
+
+type CoachMarkKey = (typeof HOME_COACH_MARKS)[number]['key'];
 
 function buildSparklinePoints(readings: HRVReading[]): {
   points: string;
@@ -131,6 +162,7 @@ export default function HomeScreen(): JSX.Element {
   } = useUser();
   
   const [refreshing, setRefreshing] = React.useState(false);
+  const [activeCoachMarkIndex, setActiveCoachMarkIndex] = React.useState<number | null>(null);
   const recentReadings = hrvReadings.slice(-7);
   const sparkline = buildSparklinePoints(recentReadings);
   const sparklineColor =
@@ -146,6 +178,117 @@ export default function HomeScreen(): JSX.Element {
     await refreshData();
     setRefreshing(false);
   }, [refreshData]);
+
+  const completeCoachMarks = React.useCallback(async () => {
+    try {
+      const rawSettings = await AsyncStorage.getItem(StorageKeys.APP_SETTINGS);
+      const parsedSettings =
+        rawSettings && rawSettings.trim().length > 0
+          ? (JSON.parse(rawSettings) as Record<string, unknown>)
+          : {};
+
+      await AsyncStorage.setItem(
+        StorageKeys.APP_SETTINGS,
+        JSON.stringify({
+          ...parsedSettings,
+          [HOME_TIPS_SETTING_KEY]: true,
+        })
+      );
+    } catch (error) {
+      console.error('Failed to persist HomeScreen coach marks state:', error);
+    } finally {
+      setActiveCoachMarkIndex(null);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    let isMounted = true;
+
+    async function loadCoachMarksState(): Promise<void> {
+      try {
+        const rawSettings = await AsyncStorage.getItem(StorageKeys.APP_SETTINGS);
+        const parsedSettings =
+          rawSettings && rawSettings.trim().length > 0
+            ? (JSON.parse(rawSettings) as Record<string, unknown>)
+            : {};
+
+        if (!parsedSettings[HOME_TIPS_SETTING_KEY] && isMounted) {
+          setActiveCoachMarkIndex(0);
+        }
+      } catch (error) {
+        console.error('Failed to load HomeScreen coach marks state:', error);
+        if (isMounted) {
+          setActiveCoachMarkIndex(0);
+        }
+      }
+    }
+
+    void loadCoachMarksState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const activeCoachMark =
+    activeCoachMarkIndex !== null ? HOME_COACH_MARKS[activeCoachMarkIndex] : null;
+  const isCoachMarkVisible = activeCoachMark !== null;
+
+  const goToNextCoachMark = React.useCallback(() => {
+    setActiveCoachMarkIndex((currentIndex) => {
+      if (currentIndex === null) {
+        return currentIndex;
+      }
+
+      if (currentIndex >= HOME_COACH_MARKS.length - 1) {
+        void completeCoachMarks();
+        return currentIndex;
+      }
+
+      return currentIndex + 1;
+    });
+  }, [completeCoachMarks]);
+
+  function renderCoachMark(target: CoachMarkKey): JSX.Element | null {
+    if (!activeCoachMark || activeCoachMark.key !== target || activeCoachMarkIndex === null) {
+      return null;
+    }
+
+    const isLastStep = activeCoachMarkIndex === HOME_COACH_MARKS.length - 1;
+
+    return (
+      <View
+        style={styles.coachMarkCard}
+        accessibilityRole="alert"
+        testID={`coach-mark-${target}`}
+      >
+        <Text style={styles.coachMarkStep}>
+          Tip {activeCoachMarkIndex + 1} of {HOME_COACH_MARKS.length}
+        </Text>
+        <Text style={styles.coachMarkTitle}>{activeCoachMark.title}</Text>
+        <Text style={styles.coachMarkBody}>{activeCoachMark.body}</Text>
+        <View style={styles.coachMarkActions}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => {
+              void completeCoachMarks();
+            }}
+          >
+            <Text style={styles.coachMarkSecondaryAction}>Skip tour</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.coachMarkPrimaryAction}
+            accessibilityRole="button"
+            onPress={goToNextCoachMark}
+          >
+            <Text style={styles.coachMarkPrimaryActionText}>
+              {isLastStep ? 'Done' : 'Next'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
   
   const userName = profile?.name || 'there';
   const gestationalAge = formatGestationalAge(currentGestationalWeek, currentGestationalDay);
@@ -171,25 +314,41 @@ export default function HomeScreen(): JSX.Element {
           </Text>
         )}
         {/* STORY-905 start: show first-time user tooltips/coach marks here. */}
+        {isCoachMarkVisible ? renderCoachMark('status') : null}
       </View>
       
       {/* Main Status Card */}
       {/* STORY-902 start: animate status card transitions when analysisResult changes. */}
-      <StatusCard
-        inversionStatus={analysisResult?.inversionStatus ?? InversionStatus.INSUFFICIENT_DATA}
-        message={analysisResult?.message ?? 'Collecting data...'}
-        recommendation={analysisResult?.recommendation}
-        confidence={analysisResult?.confidence ?? 'none'}
-      />
+      <View
+        style={[
+          styles.coachMarkTarget,
+          activeCoachMark?.key === 'status' ? styles.coachMarkTargetActive : null,
+        ]}
+      >
+        <StatusCard
+          inversionStatus={analysisResult?.inversionStatus ?? InversionStatus.INSUFFICIENT_DATA}
+          message={analysisResult?.message ?? 'Collecting data...'}
+          recommendation={analysisResult?.recommendation}
+          confidence={analysisResult?.confidence ?? 'none'}
+        />
+      </View>
       
       {/* HRV Trend Section */}
-      <View style={styles.section}>
+      <View
+        style={[
+          styles.section,
+          styles.coachMarkTarget,
+          activeCoachMark?.key === 'trend' ? styles.coachMarkTargetActive : null,
+        ]}
+      >
+        {isCoachMarkVisible ? renderCoachMark('trend') : null}
         <Text style={styles.sectionTitle}>HRV Trend</Text>
         <View style={styles.trendContainer}>
           <TrendIndicator
             trend={analysisResult?.currentTrend ?? 'insufficient_data'}
             heartRateData={hrvReadings.map((reading) => reading.hrvValue)}
             timestamps={hrvReadings.map((reading) => reading.timestamp)}
+            layout="horizontal"
           />
           {/* STORY-903 start: add a mini sparkline chart alongside trend info. */}
           <View style={styles.sparklineContainer}>
@@ -239,7 +398,14 @@ export default function HomeScreen(): JSX.Element {
       </View>
       
       {/* Quick Stats */}
-      <View style={styles.section}>
+      <View
+        style={[
+          styles.section,
+          styles.coachMarkTarget,
+          activeCoachMark?.key === 'summary' ? styles.coachMarkTargetActive : null,
+        ]}
+      >
+        {isCoachMarkVisible ? renderCoachMark('summary') : null}
         <Text style={styles.sectionTitle}>Summary</Text>
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
@@ -278,12 +444,20 @@ export default function HomeScreen(): JSX.Element {
       
       {/* View Data Button */}
       {/* STORY-906 start: add quick action buttons above or below this CTA. */}
-      <TouchableOpacity
-        style={styles.viewDataButton}
-        onPress={() => navigation.navigate('Data')}
+      <View
+        style={[
+          styles.coachMarkTarget,
+          activeCoachMark?.key === 'cta' ? styles.coachMarkTargetActive : null,
+        ]}
       >
-        <Text style={styles.viewDataButtonText}>View Compiled Data</Text>
-      </TouchableOpacity>
+        {isCoachMarkVisible ? renderCoachMark('cta') : null}
+        <TouchableOpacity
+          style={styles.viewDataButton}
+          onPress={() => navigation.navigate('Data')}
+        >
+          <Text style={styles.viewDataButtonText}>View Compiled Data</Text>
+        </TouchableOpacity>
+      </View>
       
       {/* Info Footer */}
       <View style={styles.footer}>
@@ -321,6 +495,64 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.md,
     color: COLORS.textSecondary,
     marginTop: SPACING.xs,
+  },
+  coachMarkCard: {
+    marginTop: SPACING.md,
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+  },
+  coachMarkStep: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textLight,
+    opacity: 0.85,
+    marginBottom: SPACING.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  coachMarkTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.textLight,
+    marginBottom: SPACING.xs,
+  },
+  coachMarkBody: {
+    fontSize: FONT_SIZES.sm,
+    lineHeight: 20,
+    color: COLORS.textLight,
+  },
+  coachMarkActions: {
+    marginTop: SPACING.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  coachMarkSecondaryAction: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+  },
+  coachMarkPrimaryAction: {
+    backgroundColor: COLORS.textLight,
+    borderRadius: BORDER_RADIUS.round,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  coachMarkPrimaryActionText: {
+    color: COLORS.primaryDark,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+  },
+  coachMarkTarget: {
+    borderRadius: BORDER_RADIUS.lg,
+  },
+  coachMarkTargetActive: {
+    backgroundColor: COLORS.primaryLight + '14',
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
+    padding: SPACING.sm,
+    marginHorizontal: -SPACING.sm,
+    marginBottom: SPACING.md,
   },
   section: {
     marginBottom: SPACING.xl,

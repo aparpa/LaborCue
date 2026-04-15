@@ -425,7 +425,8 @@ async function cleanupOldReadings(): Promise<void> {
 const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   theme: 'system',
-  dataRetentionDays: 365
+  dataRetentionDays: 365,
+  hasSeenHomeCoachMarks: false,
 };
 
 /**
