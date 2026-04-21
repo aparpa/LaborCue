@@ -70,7 +70,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-902 | Animated status transitions | 3 | Medium | `HomeScreen.tsx` | Leah|
 | STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | Emma|
 | STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` |Emma |
-| STORY-1008 | Improved tooltip positioning | 2 | Medium | `DataScreen.tsx` | |
+| STORY-1008 | Improved tooltip positioning | 2 | Medium | `DataScreen.tsx` |Sydney |
 | STORY-602 | Optimistic updates in context | 3 | Medium | `UserContext.tsx` |Roshni|
 
 ---
