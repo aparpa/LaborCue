@@ -236,7 +236,6 @@ export interface ChartConfig {
  */
 export type RootStackParamList = {
   Setup: undefined;
-  Onboarding: undefined;
   Main: undefined;
 };
 
@@ -268,7 +267,6 @@ export interface AppSettings {
   reminderTime?: string;            // Time for daily reminders
   theme: 'light' | 'dark' | 'system';
   dataRetentionDays: number;        // How long to keep data
-  hasSeenOnboardingCarousel?: boolean;
   hasSeenHomeCoachMarks?: boolean;  // Tracks whether the home screen tour was completed
 }
 
