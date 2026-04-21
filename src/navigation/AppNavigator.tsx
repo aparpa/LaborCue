@@ -5,7 +5,8 @@
  * 
  * Navigation Flow:
  * 1. On first launch → Setup Screen
- * 2. After setup → Main Drawer Navigation
+ * 2. After setup → Onboarding Carousel
+ * 3. After onboarding → Main Drawer Navigation
  *    - Home (Dashboard)
  *    - Data (HRV Chart)
  *    - Settings
@@ -32,16 +33,11 @@
  *   - Description: Customize screen transition animations to feel more
  *     polished (fade, slide, etc.)
  * 
- * TODO [STORY-704]: Add onboarding carousel after setup
- *   - Priority: Medium
- *   - Points: 3
- *   - Description: Show a brief tutorial carousel explaining how to use
- *     the app after initial setup completes.
- * 
  * =============================================================================
  */
 
-import React from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
@@ -49,7 +45,7 @@ import {
   DrawerContentScrollView,
   DrawerItemList,
 } from '@react-navigation/drawer';
-import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 import { useUser } from '../context/UserContext';
 import { BORDER_RADIUS, COLORS, FONT_SIZES, SPACING, STATUS_MESSAGES } from '../constants';
@@ -60,8 +56,9 @@ import HomeScreen from '../screens/HomeScreen';
 import DataScreen from '../screens/DataScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
-import type { RootStackParamList, DrawerParamList } from '../types';
 import type { DrawerContentComponentProps } from '@react-navigation/drawer';
+import { StorageKeys } from '../types';
+import type { AppSettings, RootStackParamList, DrawerParamList } from '../types';
 
 // ============================================================================
 // NAVIGATOR INSTANCES
@@ -91,6 +88,37 @@ function formatDrawerStatusTitle(status?: string): string {
   return STATUS_MESSAGES[status as keyof typeof STATUS_MESSAGES]?.title ??
     status.replace('_', ' ');
 }
+const ONBOARDING_SLIDES = [
+  {
+    eyebrow: 'Step 1',
+    title: 'Wear your device overnight',
+    body: 'Labor Cue works best with regular HRV readings. Aim to sync data every couple of nights.',
+  },
+  {
+    eyebrow: 'Step 2',
+    title: 'Watch your trend',
+    body: 'Your dashboard highlights changes in HRV patterns and explains what the current signal means.',
+  },
+  {
+    eyebrow: 'Step 3',
+    title: 'Share concerns early',
+    body: 'Use the data view for details, and contact your healthcare provider about anything that worries you.',
+  },
+] as const;
+
+async function saveOnboardingSeen(): Promise<void> {
+  const rawSettings = await AsyncStorage.getItem(StorageKeys.APP_SETTINGS);
+  const currentSettings = rawSettings ? JSON.parse(rawSettings) as Partial<AppSettings> : {};
+
+  await AsyncStorage.setItem(
+    StorageKeys.APP_SETTINGS,
+    JSON.stringify({
+      ...currentSettings,
+      hasSeenOnboardingCarousel: true,
+    })
+  );
+}
+
 // ============================================================================
 // DRAWER NAVIGATOR (Main App Navigation)
 // ============================================================================
@@ -220,6 +248,99 @@ function MainDrawerNavigator(): JSX.Element {
 }
 
 // ============================================================================
+// ONBOARDING CAROUSEL
+// ============================================================================
+
+interface OnboardingCarouselProps {
+  onComplete: () => void;
+}
+
+function OnboardingCarousel({ onComplete }: OnboardingCarouselProps): JSX.Element {
+  const [activeSlideIndex, setActiveSlideIndex] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const activeSlide = ONBOARDING_SLIDES[activeSlideIndex];
+  const isLastSlide = activeSlideIndex === ONBOARDING_SLIDES.length - 1;
+
+  async function finishOnboarding(): Promise<void> {
+    setIsSaving(true);
+
+    try {
+      await saveOnboardingSeen();
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    } finally {
+      setIsSaving(false);
+      onComplete();
+    }
+  }
+
+  function goToNextSlide(): void {
+    if (isLastSlide) {
+      void finishOnboarding();
+      return;
+    }
+
+    setActiveSlideIndex((previousIndex) => previousIndex + 1);
+  }
+
+  return (
+    <View style={styles.onboardingContainer} testID="onboarding-carousel">
+      <View style={styles.onboardingContent}>
+        <Text style={styles.onboardingEyebrow}>{activeSlide.eyebrow}</Text>
+        <Text style={styles.onboardingTitle}>{activeSlide.title}</Text>
+        <Text style={styles.onboardingBody}>{activeSlide.body}</Text>
+      </View>
+
+      <View style={styles.onboardingFooter}>
+        <View
+          style={styles.onboardingDots}
+          accessibilityLabel={`Onboarding slide ${activeSlideIndex + 1} of ${ONBOARDING_SLIDES.length}`}
+        >
+          {ONBOARDING_SLIDES.map((slide, index) => (
+            <View
+              key={slide.title}
+              style={[
+                styles.onboardingDot,
+                index === activeSlideIndex && styles.onboardingDotActive,
+              ]}
+              testID={`onboarding-dot-${index + 1}`}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.onboardingDisclaimer}>
+          Labor Cue is informational and does not replace medical care.
+        </Text>
+
+        <View style={styles.onboardingActions}>
+          {!isLastSlide ? (
+            <TouchableOpacity
+              style={styles.onboardingSecondaryButton}
+              onPress={finishOnboarding}
+              disabled={isSaving}
+            >
+              <Text style={styles.onboardingSecondaryButtonText}>Skip</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.onboardingButtonSpacer} />
+          )}
+
+          <TouchableOpacity
+            style={[styles.onboardingPrimaryButton, isSaving && styles.onboardingButtonDisabled]}
+            onPress={goToNextSlide}
+            disabled={isSaving}
+          >
+            <Text style={styles.onboardingPrimaryButtonText}>
+              {isLastSlide ? 'Start Using Labor Cue' : 'Next'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ============================================================================
 // ROOT NAVIGATOR
 // ============================================================================
 
@@ -239,9 +360,57 @@ function LoadingScreen(): JSX.Element {
  */
 function RootNavigator(): JSX.Element {
   const { isLoading, isFirstLaunch } = useUser();
+  const [shouldShowOnboarding, setShouldShowOnboarding] = useState(false);
+  const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(false);
+  const wasFirstLaunchRef = useRef(isFirstLaunch);
+
+  useEffect(() => {
+    if (isLoading) {
+      wasFirstLaunchRef.current = isFirstLaunch;
+      return;
+    }
+
+    if (isFirstLaunch) {
+      setShouldShowOnboarding(false);
+      setIsCheckingOnboarding(false);
+      wasFirstLaunchRef.current = isFirstLaunch;
+      return;
+    }
+
+    wasFirstLaunchRef.current = isFirstLaunch;
+    let isMounted = true;
+
+    async function prepareOnboarding(): Promise<void> {
+      setIsCheckingOnboarding(true);
+
+      try {
+        const rawSettings = await AsyncStorage.getItem(StorageKeys.APP_SETTINGS);
+        const settings = rawSettings ? JSON.parse(rawSettings) as Partial<AppSettings> : {};
+
+        if (isMounted) {
+          setShouldShowOnboarding(settings.hasSeenOnboardingCarousel !== true);
+        }
+      } catch (error) {
+        console.error('Failed to load onboarding state:', error);
+        if (isMounted) {
+          setShouldShowOnboarding(true);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingOnboarding(false);
+        }
+      }
+    }
+
+    void prepareOnboarding();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isFirstLaunch, isLoading]);
   
   // Show loading screen while checking initial state
-  if (isLoading) {
+  if (isLoading || isCheckingOnboarding) {
     return <LoadingScreen />;
   }
   
@@ -265,8 +434,17 @@ function RootNavigator(): JSX.Element {
             headerTintColor: COLORS.textLight,
           }}
         />
+      ) : shouldShowOnboarding ? (
+        // New user after setup: show a brief tutorial before the main app
+        <Stack.Screen name="Onboarding">
+          {() => (
+            <OnboardingCarousel
+              onComplete={() => setShouldShowOnboarding(false)}
+            />
+          )}
+        </Stack.Screen>
       ) : (
-        // Returning user: show main app
+        // Returning user or completed onboarding: show main app
         <Stack.Screen
           name="Main"
           component={MainDrawerNavigator}
@@ -387,5 +565,92 @@ const styles = StyleSheet.create({
   },
   drawerItems: {
     paddingTop: SPACING.sm,
+  },
+  onboardingContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    padding: SPACING.lg,
+  },
+  onboardingContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  onboardingEyebrow: {
+    color: COLORS.primary,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    marginBottom: SPACING.sm,
+  },
+  onboardingTitle: {
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZES.xxl,
+    fontWeight: '700',
+    marginBottom: SPACING.md,
+  },
+  onboardingBody: {
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.lg,
+    lineHeight: 26,
+  },
+  onboardingFooter: {
+    gap: SPACING.md,
+  },
+  onboardingDots: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    justifyContent: 'center',
+  },
+  onboardingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: BORDER_RADIUS.round,
+    backgroundColor: COLORS.border,
+  },
+  onboardingDotActive: {
+    width: 28,
+    backgroundColor: COLORS.primary,
+  },
+  onboardingDisclaimer: {
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.xs,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  onboardingActions: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+  },
+  onboardingButtonSpacer: {
+    flex: 1,
+  },
+  onboardingPrimaryButton: {
+    flex: 2,
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.lg,
+  },
+  onboardingSecondaryButton: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: COLORS.backgroundSecondary,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    padding: SPACING.lg,
+  },
+  onboardingButtonDisabled: {
+    backgroundColor: COLORS.neutral,
+  },
+  onboardingPrimaryButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  onboardingSecondaryButtonText: {
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
   },
 });

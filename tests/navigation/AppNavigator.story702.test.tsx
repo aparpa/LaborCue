@@ -8,7 +8,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-var-requires */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react-native';
+import { render, screen, waitFor } from '@testing-library/react-native';
 import AppNavigator from '../../src/navigation/AppNavigator';
 import { InversionStatus } from '../../src/types';
 
@@ -121,11 +121,14 @@ jest.mock('../../src/context/UserContext', () => ({
   useUser: () => mockUseUser(),
 }));
 
+const mockAsyncStorageGetItem = jest.fn();
+const mockAsyncStorageSetItem = jest.fn();
+
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
-    getItem: jest.fn(),
-    setItem: jest.fn(),
+    getItem: (...args: unknown[]) => mockAsyncStorageGetItem(...args),
+    setItem: (...args: unknown[]) => mockAsyncStorageSetItem(...args),
   },
 }));
 
@@ -210,15 +213,21 @@ function renderMainDrawer(): ReturnType<typeof render> {
 describe('AppNavigator STORY-702', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAsyncStorageGetItem.mockResolvedValue(
+      JSON.stringify({ hasSeenOnboardingCarousel: true })
+    );
+    mockAsyncStorageSetItem.mockResolvedValue(undefined);
   });
 
-  it('renders avatar, gestational week, and quick stats at the top of the drawer', () => {
+  it('renders avatar, gestational week, and quick stats at the top of the drawer', async () => {
     // Act
     renderMainDrawer();
 
-    // Assert: custom drawer header appears above the route list.
-    expect(screen.getByTestId('custom-drawer-header')).toBeTruthy();
-    expect(screen.getByText('Drawer route list')).toBeTruthy();
+    // Assert: the returning user bypasses onboarding and lands in the drawer.
+    expect(await screen.findByTestId('custom-drawer-header')).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText('Drawer route list')).toBeTruthy();
+    });
 
     // Assert: user avatar and display name are shown.
     expect(screen.getByTestId('drawer-avatar')).toBeTruthy();

@@ -8,12 +8,6 @@
  * TODOS FOR THIS FILE:
  * =============================================================================
  * 
- * TODO [STORY-1201]: Add animated pulse effect for urgent statuses
- *   - Priority: Medium
- *   - Points: 2
- *   - Description: When status is PROBABLE_INVERSION, add a subtle pulse
- *     animation to draw attention.
- * 
  * TODO [STORY-1202]: Implement expandable/collapsible card
  *   - Priority: Low
  *   - Points: 2
@@ -36,7 +30,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { InversionStatus, ConfidenceLevel, STATUS_COLORS } from '../types';
 import { SPACING, FONT_SIZES, BORDER_RADIUS, COLORS } from '../constants';
 
@@ -54,6 +48,48 @@ export default function StatusCard({
   confidence,
 }: StatusCardProps): JSX.Element {
   const colors = STATUS_COLORS[inversionStatus];
+  const pulseAnimation = React.useRef(new Animated.Value(0)).current;
+  const isUrgentStatus = inversionStatus === InversionStatus.PROBABLE_INVERSION;
+
+  React.useEffect(() => {
+    if (!isUrgentStatus) {
+      pulseAnimation.setValue(0);
+      return undefined;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnimation, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnimation, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [isUrgentStatus, pulseAnimation]);
+
+  const pulseScale = pulseAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.015],
+  });
+
+  const pulseOpacity = pulseAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.96],
+  });
   
   // Get status title
   const getStatusTitle = (): string => {
@@ -100,7 +136,17 @@ export default function StatusCard({
   };
   
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <Animated.View
+      testID="status-card-root"
+      style={[
+        styles.container,
+        { backgroundColor: colors.background },
+        isUrgentStatus && {
+          opacity: pulseOpacity,
+          transform: [{ scale: pulseScale }],
+        },
+      ]}
+    >
       {/* Status Header */}
       <View style={styles.header}>
         <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
@@ -143,7 +189,7 @@ export default function StatusCard({
           <Text style={styles.recommendationText}>{recommendation}</Text>
         </View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
