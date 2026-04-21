@@ -124,6 +124,13 @@ describe('SetupScreen multi-step flow (STORY-803)', () => {
         name: 'Midwife Team',
         contact: 'care@example.com',
       },
+      healthcareProviders: [
+        expect.objectContaining({
+          name: 'Midwife Team',
+          contact: 'care@example.com',
+        }),
+      ],
+      primaryHealthcareProviderId: expect.any(String),
     });
   });
 

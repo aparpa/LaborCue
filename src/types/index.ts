@@ -48,6 +48,8 @@ export interface UserProfile {
   estimatedDueDate: string;         // ISO date string of expected delivery
   currentWeeksPregnant: number;     // Calculated field
   healthcareProvider?: HealthcareProvider;
+  healthcareProviders?: HealthcareProvider[];
+  primaryHealthcareProviderId?: string;
   createdAt: string;
   updatedAt: string;
   isFirstLaunch: boolean;           // Tracks if setup has been completed
@@ -57,6 +59,7 @@ export interface UserProfile {
  * Healthcare provider contact information
  */
 export interface HealthcareProvider {
+  id?: string;
   name: string;
   contact: string;                  // Phone, email, or other contact method
 }

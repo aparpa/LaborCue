@@ -68,7 +68,7 @@
  * =============================================================================
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -84,7 +84,58 @@ import { useUser } from '../context/UserContext';
 import { clearAllData, saveHRVReading } from '../services/storage';
 import { formatDate, formatGestationalAge } from '../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants';
-import type { HRVReading } from '../types';
+import type { HealthcareProvider, HRVReading, UserProfile } from '../types';
+
+function createProviderId(): string {
+  return `provider-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeProviders(profile: UserProfile | null): HealthcareProvider[] {
+  if (!profile) {
+    return [];
+  }
+
+  const sourceProviders = profile.healthcareProviders?.length
+    ? profile.healthcareProviders
+    : profile.healthcareProvider
+      ? [profile.healthcareProvider]
+      : [];
+
+  return sourceProviders.map((provider, index) => ({
+    ...provider,
+    id: provider.id ?? `provider-${index + 1}-${provider.name.toLowerCase().replace(/\s+/g, '-')}`,
+  }));
+}
+
+function getPrimaryProviderId(
+  profile: UserProfile | null,
+  providers: HealthcareProvider[]
+): string | undefined {
+  if (providers.length === 0) {
+    return undefined;
+  }
+
+  if (
+    profile?.primaryHealthcareProviderId &&
+    providers.some((provider) => provider.id === profile.primaryHealthcareProviderId)
+  ) {
+    return profile.primaryHealthcareProviderId;
+  }
+
+  if (profile?.healthcareProvider) {
+    const matchingProvider = providers.find(
+      (provider) =>
+        provider.name === profile.healthcareProvider?.name &&
+        provider.contact === profile.healthcareProvider?.contact
+    );
+
+    if (matchingProvider?.id) {
+      return matchingProvider.id;
+    }
+  }
+
+  return providers[0].id;
+}
 
 export default function SettingsScreen(): JSX.Element {
   const {
@@ -99,6 +150,21 @@ export default function SettingsScreen(): JSX.Element {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [providerFormVisible, setProviderFormVisible] = useState(false);
+  const [providerNameInput, setProviderNameInput] = useState('');
+  const [providerContactInput, setProviderContactInput] = useState('');
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [providers, setProviders] = useState<HealthcareProvider[]>(() => normalizeProviders(profile));
+  const [primaryProviderId, setPrimaryProviderId] = useState<string | undefined>(() =>
+    getPrimaryProviderId(profile, normalizeProviders(profile))
+  );
+
+  useEffect(() => {
+    const nextProviders = normalizeProviders(profile);
+    setProviders(nextProviders);
+    setPrimaryProviderId(getPrimaryProviderId(profile, nextProviders));
+    setNameInput(profile?.name || '');
+  }, [profile]);
   
   // Handle name edit
   const handleSaveName = async () => {
@@ -109,6 +175,140 @@ export default function SettingsScreen(): JSX.Element {
       });
     }
     setEditingName(false);
+  };
+
+  const resetProviderForm = () => {
+    setProviderFormVisible(false);
+    setProviderNameInput('');
+    setProviderContactInput('');
+    setEditingProviderId(null);
+  };
+
+  const persistProviders = async (
+    nextProviders: HealthcareProvider[],
+    nextPrimaryProviderId?: string
+  ) => {
+    if (!profile) {
+      return;
+    }
+
+    const primaryProvider = nextProviders.find(
+      (provider) => provider.id === nextPrimaryProviderId
+    );
+
+    const updatedProfile: UserProfile = {
+      ...profile,
+      healthcareProviders: nextProviders,
+      primaryHealthcareProviderId: primaryProvider?.id,
+      healthcareProvider: primaryProvider
+        ? {
+            id: primaryProvider.id,
+            name: primaryProvider.name,
+            contact: primaryProvider.contact,
+          }
+        : undefined,
+    };
+
+    await setProfile(updatedProfile);
+    setProviders(nextProviders);
+    setPrimaryProviderId(primaryProvider?.id);
+  };
+
+  const handleSaveProvider = async () => {
+    if (!profile) {
+      return;
+    }
+
+    const trimmedName = providerNameInput.trim();
+    const trimmedContact = providerContactInput.trim();
+
+    if (!trimmedName || !trimmedContact) {
+      Alert.alert('Missing information', 'Please enter both a provider name and contact.');
+      return;
+    }
+
+    const nextProviders = editingProviderId
+      ? providers.map((provider) =>
+          provider.id === editingProviderId
+            ? {
+                ...provider,
+                name: trimmedName,
+                contact: trimmedContact,
+              }
+            : provider
+        )
+      : [
+          ...providers,
+          {
+            id: createProviderId(),
+            name: trimmedName,
+            contact: trimmedContact,
+          },
+        ];
+
+    const nextPrimary = primaryProviderId ?? nextProviders[0]?.id;
+
+    try {
+      await persistProviders(nextProviders, nextPrimary);
+      resetProviderForm();
+    } catch (error) {
+      console.error('Failed to save healthcare provider:', error);
+      Alert.alert('Error', 'Failed to save healthcare provider.');
+    }
+  };
+
+  const handleEditProvider = (provider: HealthcareProvider) => {
+    setEditingProviderId(provider.id ?? null);
+    setProviderNameInput(provider.name);
+    setProviderContactInput(provider.contact);
+    setProviderFormVisible(true);
+  };
+
+  const handleDeleteProvider = (providerId: string | undefined) => {
+    if (!providerId) {
+      return;
+    }
+
+    Alert.alert(
+      'Remove Provider',
+      'Remove this provider from your saved list?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const nextProviders = providers.filter((provider) => provider.id !== providerId);
+            const nextPrimary = primaryProviderId === providerId
+              ? nextProviders[0]?.id
+              : primaryProviderId;
+
+            try {
+              await persistProviders(nextProviders, nextPrimary);
+              if (editingProviderId === providerId) {
+                resetProviderForm();
+              }
+            } catch (error) {
+              console.error('Failed to remove healthcare provider:', error);
+              Alert.alert('Error', 'Failed to remove healthcare provider.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSetPrimaryProvider = async (providerId: string | undefined) => {
+    if (!providerId) {
+      return;
+    }
+
+    try {
+      await persistProviders(providers, providerId);
+    } catch (error) {
+      console.error('Failed to update primary healthcare provider:', error);
+      Alert.alert('Error', 'Failed to update the primary provider.');
+    }
   };
   
   // Handle adding test data
@@ -218,10 +418,126 @@ export default function SettingsScreen(): JSX.Element {
         <View style={styles.settingRow}>
           <Text style={styles.settingLabel}>Healthcare Provider</Text>
           <Text style={styles.settingValue}>
-            {profile?.healthcareProvider?.name || 'Not set'}
+            {providers.find((provider) => provider.id === primaryProviderId)?.name || 'Not set'}
           </Text>
         </View>
-        {/* STORY-1104 start: add provider management UI here (list/add/edit). */}
+
+        <View style={styles.providerSection}>
+          <View style={styles.providerSectionHeader}>
+            <View>
+              <Text style={styles.providerSectionTitle}>Provider Management</Text>
+              <Text style={styles.providerSectionSubtitle}>
+                Add care contacts and choose a primary provider for sharing.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                setEditingProviderId(null);
+                setProviderNameInput('');
+                setProviderContactInput('');
+                setProviderFormVisible(true);
+              }}
+              style={styles.providerAddButton}
+              testID="provider-add-button"
+            >
+              <Text style={styles.providerAddButtonText}>Add Provider</Text>
+            </TouchableOpacity>
+          </View>
+
+          {providers.length === 0 ? (
+            <View style={styles.emptyProviderCard}>
+              <Text style={styles.emptyProviderTitle}>No providers saved yet</Text>
+              <Text style={styles.emptyProviderText}>
+                Add your OB, midwife, doula, or clinic contact details here.
+              </Text>
+            </View>
+          ) : (
+            providers.map((provider) => {
+              const isPrimary = provider.id === primaryProviderId;
+
+              return (
+                <View key={provider.id} style={styles.providerCard}>
+                  <View style={styles.providerCardHeader}>
+                    <View style={styles.providerTextBlock}>
+                      <Text style={styles.providerName}>{provider.name}</Text>
+                      <Text style={styles.providerContact}>{provider.contact}</Text>
+                    </View>
+                    {isPrimary ? (
+                      <View style={styles.primaryBadge}>
+                        <Text style={styles.primaryBadgeText}>Primary</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.providerActions}>
+                    {!isPrimary ? (
+                      <TouchableOpacity
+                        onPress={() => handleSetPrimaryProvider(provider.id)}
+                        style={styles.providerActionButton}
+                        testID={`provider-primary-${provider.id}`}
+                      >
+                        <Text style={styles.providerActionText}>Set Primary</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      onPress={() => handleEditProvider(provider)}
+                      style={styles.providerActionButton}
+                      testID={`provider-edit-${provider.id}`}
+                    >
+                      <Text style={styles.providerActionText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteProvider(provider.id)}
+                      style={[styles.providerActionButton, styles.providerDeleteButton]}
+                      testID={`provider-delete-${provider.id}`}
+                    >
+                      <Text style={[styles.providerActionText, styles.providerDeleteText]}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          {providerFormVisible ? (
+            <View style={styles.providerFormCard}>
+              <Text style={styles.providerFormTitle}>
+                {editingProviderId ? 'Edit Provider' : 'Add Provider'}
+              </Text>
+              <TextInput
+                style={styles.providerInput}
+                value={providerNameInput}
+                onChangeText={setProviderNameInput}
+                placeholder="Provider name"
+                testID="provider-name-input"
+              />
+              <TextInput
+                style={styles.providerInput}
+                value={providerContactInput}
+                onChangeText={setProviderContactInput}
+                placeholder="Phone or email"
+                testID="provider-contact-input"
+              />
+              <View style={styles.providerFormActions}>
+                <TouchableOpacity
+                  onPress={resetProviderForm}
+                  style={[styles.providerFormButton, styles.providerSecondaryButton]}
+                >
+                  <Text style={styles.providerSecondaryButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSaveProvider}
+                  style={styles.providerFormButton}
+                  testID="provider-save-button"
+                >
+                  <Text style={styles.providerFormButtonText}>
+                    {editingProviderId ? 'Save Changes' : 'Save Provider'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+        </View>
       </View>
       
       {/* STORY-1101 start: add device pairing/management section here. */}
@@ -412,6 +728,164 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: COLORS.textLight,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '500',
+  },
+  providerSection: {
+    marginTop: SPACING.md,
+    gap: SPACING.md,
+  },
+  providerSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: SPACING.md,
+  },
+  providerSectionTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  providerSectionSubtitle: {
+    marginTop: SPACING.xs,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    maxWidth: 220,
+    lineHeight: 18,
+  },
+  providerAddButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.round,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  providerAddButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+  },
+  emptyProviderCard: {
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+  },
+  emptyProviderTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
+  },
+  emptyProviderText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+  },
+  providerCard: {
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    gap: SPACING.md,
+  },
+  providerCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: SPACING.md,
+  },
+  providerTextBlock: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  providerName: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  providerContact: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+  },
+  primaryBadge: {
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: BORDER_RADIUS.round,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
+  primaryBadgeText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600',
+  },
+  providerActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  providerActionButton: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.round,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  providerActionText: {
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '500',
+  },
+  providerDeleteButton: {
+    borderColor: COLORS.danger,
+    backgroundColor: COLORS.danger + '10',
+  },
+  providerDeleteText: {
+    color: COLORS.danger,
+  },
+  providerFormCard: {
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  providerFormTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
+  },
+  providerInput: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.textPrimary,
+  },
+  providerFormActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  providerFormButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  providerFormButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+  },
+  providerSecondaryButton: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  providerSecondaryButtonText: {
+    color: COLORS.textPrimary,
     fontSize: FONT_SIZES.sm,
     fontWeight: '500',
   },

@@ -247,9 +247,12 @@ export default function SetupScreen(): JSX.Element {
 
       if (providerName || providerContact) {
         profile.healthcareProvider = {
+          id: `provider-${Date.now()}`,
           name: providerName,
           contact: providerContact,
         };
+        profile.healthcareProviders = [profile.healthcareProvider];
+        profile.primaryHealthcareProviderId = profile.healthcareProvider.id;
       }
 
       await setProfile(profile);
