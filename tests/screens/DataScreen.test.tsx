@@ -1,14 +1,11 @@
 /**
- * Tests for DataScreen.tsx (STORY-1003: Highlight inflection point on chart)
- *
- * Verifies that the inflection/inversion marker is rendered on the chart
- * when an inversion is present, and omitted when no inversion is provided.
+ * Tests for DataScreen.tsx export and chart behavior.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-var-requires */
 
 import React from 'react';
 import { render, screen, configure, fireEvent, waitFor } from '@testing-library/react-native';
-import DataScreen from '../../src/screens/DataScreen';
+import DataScreen, { __testables } from '../../src/screens/DataScreen';
 import type { HRVAnalysisResult, HRVReading } from '../../src/types';
 import { InversionStatus } from '../../src/types';
 
@@ -18,12 +15,12 @@ jest.mock('../../src/services/storage', () => ({
   exportDataAsPDF: jest.fn(),
 }));
 
+const mockWriteAsStringAsync = jest.fn();
+const mockIsAvailableAsync = jest.fn();
+const mockShareAsync = jest.fn();
 const mockShare = jest.fn();
 const mockAlert = jest.fn();
-const mockShareAsync = jest.fn();
-const mockIsAvailableAsync = jest.fn();
 
-// Lightweight React Native mock to avoid ESM parsing issues in RN entrypoint.
 jest.mock('react-native', () => {
   const React = require('react');
   return {
@@ -42,13 +39,19 @@ jest.mock('react-native', () => {
   };
 });
 
+jest.mock('expo-file-system', () => ({
+  __esModule: true,
+  cacheDirectory: 'file:///cache/',
+  EncodingType: { UTF8: 'utf8' },
+  writeAsStringAsync: (...args: unknown[]) => mockWriteAsStringAsync(...args),
+}));
+
 jest.mock('expo-sharing', () => ({
   __esModule: true,
   isAvailableAsync: (...args: unknown[]) => mockIsAvailableAsync(...args),
   shareAsync: (...args: unknown[]) => mockShareAsync(...args),
 }));
 
-// Mock react-native-svg primitives used by the chart decorator.
 jest.mock('react-native-svg', () => {
   const React = require('react');
   const mock = (name: string) => (props: any) =>
@@ -61,7 +64,6 @@ jest.mock('react-native-svg', () => {
   };
 });
 
-// Mock gesture-handler components for non-native Jest environment.
 jest.mock('react-native-gesture-handler', () => {
   const React = require('react');
   const passthrough = (props: any) => React.createElement('view', props, props.children);
@@ -72,10 +74,8 @@ jest.mock('react-native-gesture-handler', () => {
   };
 });
 
-// Mock expo-sqlite which is ESM-only and not needed for this screen test.
 jest.mock('expo-sqlite', () => ({}));
 
-// Capture what the chart decorator renders so we can assert on the SVG label.
 jest.mock('react-native-chart-kit', () => {
   return {
     LineChart: ({ decorator }: any) => {
@@ -87,7 +87,6 @@ jest.mock('react-native-chart-kit', () => {
   };
 });
 
-// Mock user context to inject readings and analysis result
 const mockUseUser = jest.fn();
 jest.mock('../../src/context/UserContext', () => ({
   useUser: () => mockUseUser(),
@@ -103,10 +102,11 @@ const makeReadings = (count: number, startWeek: number): HRVReading[] =>
     source: 'manual',
   }));
 
-describe('DataScreen inflection marker (STORY-1003)', () => {
+describe('DataScreen exports and chart markers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsAvailableAsync.mockResolvedValue(true);
+    mockWriteAsStringAsync.mockResolvedValue(undefined);
     mockShareAsync.mockResolvedValue(undefined);
     mockShare.mockResolvedValue(undefined);
     configure({
@@ -122,8 +122,8 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
   });
 
   it('renders the inflection marker when inversion is within the displayed readings', () => {
-    const readings = makeReadings(16, 30); // last 14 will be used by the chart
-    const inversionReading = readings[12]; // inside the displayed slice
+    const readings = makeReadings(16, 30);
+    const inversionReading = readings[12];
     const { Text: SvgText } = require('react-native-svg');
 
     const analysisResult: HRVAnalysisResult = {
@@ -147,10 +147,10 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
 
     const markerLabels = screen.UNSAFE_getAllByType(SvgText);
     const textContent = markerLabels
-      .map((n) =>
-        Array.isArray(n.props.children)
-          ? n.props.children.join('')
-          : n.props.children ?? ''
+      .map((node) =>
+        Array.isArray(node.props.children)
+          ? node.props.children.join('')
+          : node.props.children ?? ''
       )
       .join(' ');
     expect(textContent).toContain('Inflection');
@@ -236,5 +236,94 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
         url: 'file:///cache/labor-cue-report.pdf',
       })
     );
+  });
+
+  it('creates an SVG chart image and shares it when tapping Share Chart Image', async () => {
+    const readings = makeReadings(6, 28);
+
+    mockUseUser.mockReturnValue({
+      hrvReadings: readings,
+      analysisResult: {
+        currentTrend: 'stable',
+        inversionStatus: InversionStatus.ON_TRACK,
+        confidence: 'medium',
+        lastAnalyzedAt: new Date().toISOString(),
+        message: 'Stable trend',
+      },
+      currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+    });
+
+    render(React.createElement(DataScreen, null));
+
+    fireEvent.press(screen.getByText('Share Chart Image'));
+
+    await waitFor(() => {
+      expect(mockWriteAsStringAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(mockWriteAsStringAsync.mock.calls[0][0]).toContain('file:///cache/labor-cue-chart-');
+    expect(mockWriteAsStringAsync.mock.calls[0][1]).toContain('<svg');
+    expect(mockWriteAsStringAsync.mock.calls[0][1]).toContain('Labor Cue HRV Chart');
+    expect(mockShareAsync).toHaveBeenCalledWith(
+      expect.stringContaining('file:///cache/labor-cue-chart-'),
+      expect.objectContaining({
+        mimeType: 'image/svg+xml',
+        dialogTitle: 'Share HRV Chart',
+      })
+    );
+  });
+
+  it('falls back to sharing the generated chart file URL when native sharing is unavailable', async () => {
+    const readings = makeReadings(6, 28);
+    mockIsAvailableAsync.mockResolvedValue(false);
+
+    mockUseUser.mockReturnValue({
+      hrvReadings: readings,
+      analysisResult: {
+        currentTrend: 'stable',
+        inversionStatus: InversionStatus.ON_TRACK,
+        confidence: 'medium',
+        lastAnalyzedAt: new Date().toISOString(),
+        message: 'Stable trend',
+      },
+      currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+    });
+
+    render(React.createElement(DataScreen, null));
+    fireEvent.press(screen.getByText('Share Chart Image'));
+
+    await waitFor(() => {
+      expect(mockWriteAsStringAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(mockShareAsync).not.toHaveBeenCalled();
+    expect(mockShare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Labor Cue HRV Chart',
+        message: expect.stringContaining('file:///cache/labor-cue-chart-'),
+        url: expect.stringContaining('file:///cache/labor-cue-chart-'),
+      })
+    );
+  });
+});
+
+describe('DataScreen STORY-1007 helpers', () => {
+  it('builds a shareable SVG with summary and inflection marker', () => {
+    const readings = makeReadings(8, 30);
+    const analysisResult: HRVAnalysisResult = {
+      currentTrend: 'increasing',
+      inversionStatus: InversionStatus.POSSIBLE_INVERSION,
+      confidence: 'medium',
+      inversionDetectedAt: readings[4].timestamp,
+      lastAnalyzedAt: new Date().toISOString(),
+      message: 'Trend is increasing',
+      recommendation: 'Share this chart with your provider.',
+    };
+
+    const svg = __testables.buildShareableChartSvg(readings, analysisResult);
+
+    expect(svg).toContain('<svg');
+    expect(svg).toContain('Labor Cue HRV Chart');
+    expect(svg).toContain('Inflection');
+    expect(svg).toContain('possible');
+    expect(svg).toContain(`W${readings[0].gestationalWeek}`);
   });
 });

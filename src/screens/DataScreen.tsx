@@ -106,8 +106,21 @@ import type { HRVReading, HRVAnalysisResult } from '../types';
 const screenWidth = Dimensions.get('window').width;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
+const SHARE_CHART_WIDTH = 1200;
+const SHARE_CHART_HEIGHT = 720;
 
 declare const require: (moduleName: string) => unknown;
+
+type FileSystemModule = {
+  cacheDirectory?: string | null;
+  EncodingType?: { UTF8?: string };
+  writeAsStringAsync?: (
+    uri: string,
+    contents: string,
+    options?: { encoding?: string }
+  ) => Promise<void>;
+  default?: FileSystemModule;
+};
 
 type SharingModule = {
   isAvailableAsync?: () => Promise<boolean>;
@@ -117,6 +130,11 @@ type SharingModule = {
   ) => Promise<void>;
   default?: SharingModule;
 };
+
+function getFileSystemApi(): FileSystemModule {
+  const module = require('expo-file-system') as FileSystemModule;
+  return module.writeAsStringAsync ? module : (module.default ?? {});
+}
 
 function getSharingApi(): SharingModule {
   const module = require('expo-sharing') as SharingModule;
@@ -199,6 +217,36 @@ export default function DataScreen(): JSX.Element {
     } catch (error) {
       console.error('PDF export failed:', error);
       Alert.alert('Export Failed', 'Unable to export a PDF report. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [analysisResult, visibleReadings]);
+
+  const handleShareChart = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      const sharingApi = getSharingApi();
+      const svg = buildShareableChartSvg(visibleReadings, analysisResult);
+      const svgUri = await writeChartSvgToCache(svg);
+
+      const canUseNativeShare = await sharingApi.isAvailableAsync?.();
+      if (canUseNativeShare) {
+        await sharingApi.shareAsync?.(svgUri, {
+          mimeType: 'image/svg+xml',
+          dialogTitle: 'Share HRV Chart',
+          UTI: 'public.svg-image',
+        });
+        return;
+      }
+
+      await Share.share({
+        message: `HRV chart export: ${svgUri}`,
+        title: 'Labor Cue HRV Chart',
+        url: svgUri,
+      });
+    } catch (error) {
+      console.error('Share chart failed:', error);
+      Alert.alert?.('Share Failed', 'Unable to create a shareable chart image. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -455,7 +503,13 @@ export default function DataScreen(): JSX.Element {
         >
           <Text style={styles.pdfExportButtonText}>Export PDF Report</Text>
         </TouchableOpacity>
-        {/* STORY-1007 start: add a "Share Chart Image" button here. */}
+        <TouchableOpacity
+          style={[styles.shareChartButton, isExporting && styles.exportButtonDisabled]}
+          onPress={handleShareChart}
+          disabled={isExporting}
+        >
+          <Text style={styles.shareChartButtonText}>Share Chart Image</Text>
+        </TouchableOpacity>
         <View style={styles.exportButtons}>
           <TouchableOpacity
             style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}
@@ -535,6 +589,117 @@ function getInflectionPoint(
   }
 
   return { index: idx, reading: displayReadings[idx] };
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/'/g, '&apos;');
+}
+
+function getPointCoordinates(readings: HRVReading[]) {
+  if (readings.length === 0) {
+    return [];
+  }
+
+  const chartLeft = 110;
+  const chartRight = SHARE_CHART_WIDTH - 80;
+  const chartTop = 160;
+  const chartBottom = SHARE_CHART_HEIGHT - 150;
+  const values = readings.map((reading) => reading.hrvValue);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  return readings.map((reading, index) => ({
+    reading,
+    x: readings.length === 1
+      ? (chartLeft + chartRight) / 2
+      : chartLeft + ((chartRight - chartLeft) * index) / (readings.length - 1),
+    y: chartBottom - ((reading.hrvValue - min) / range) * (chartBottom - chartTop),
+  }));
+}
+
+function buildShareableChartSvg(
+  readings: HRVReading[],
+  analysis: HRVAnalysisResult | null | undefined
+): string {
+  const points = getPointCoordinates(readings);
+  const pathData = points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(' ');
+  const inflectionPoint = getInflectionPoint(analysis, readings);
+  const inflection = inflectionPoint ? points[inflectionPoint.index] : null;
+  const summary = analysis
+    ? `${analysis.currentTrend.replace('_', ' ')} trend • ${analysis.inversionStatus.replace('_', ' ')} • ${analysis.confidence} confidence`
+    : 'No analysis available yet';
+  const encodedSummary = escapeXml(summary);
+  const xAxisLabels = points
+    .filter((_, index) => index === 0 || index === points.length - 1 || index % 3 === 0)
+    .map((point) => `
+      <text x="${point.x.toFixed(2)}" y="${SHARE_CHART_HEIGHT - 90}" text-anchor="middle" font-size="22" fill="${COLORS.textSecondary}">
+        W${point.reading.gestationalWeek}
+      </text>
+    `)
+    .join('');
+  const dataPoints = points
+    .map((point) => `
+      <circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="8" fill="${COLORS.primary}" />
+    `)
+    .join('');
+
+  if (points.length === 0) {
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_CHART_WIDTH}" height="${SHARE_CHART_HEIGHT}" viewBox="0 0 ${SHARE_CHART_WIDTH} ${SHARE_CHART_HEIGHT}">
+        <rect width="100%" height="100%" fill="${COLORS.background}" />
+        <text x="80" y="120" font-size="42" font-weight="700" fill="${COLORS.textPrimary}">Labor Cue HRV Chart</text>
+        <text x="80" y="220" font-size="28" fill="${COLORS.textSecondary}">No readings available to share yet.</text>
+      </svg>
+    `;
+  }
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_CHART_WIDTH}" height="${SHARE_CHART_HEIGHT}" viewBox="0 0 ${SHARE_CHART_WIDTH} ${SHARE_CHART_HEIGHT}">
+      <rect width="100%" height="100%" rx="36" fill="${COLORS.background}" />
+      <text x="80" y="90" font-size="42" font-weight="700" fill="${COLORS.textPrimary}">Labor Cue HRV Chart</text>
+      <text x="80" y="130" font-size="24" fill="${COLORS.textSecondary}">${encodedSummary}</text>
+      <line x1="110" y1="${SHARE_CHART_HEIGHT - 150}" x2="${SHARE_CHART_WIDTH - 80}" y2="${SHARE_CHART_HEIGHT - 150}" stroke="${COLORS.chartGrid}" stroke-width="3" />
+      <line x1="110" y1="160" x2="110" y2="${SHARE_CHART_HEIGHT - 150}" stroke="${COLORS.chartGrid}" stroke-width="3" />
+      <path d="${pathData}" fill="none" stroke="${COLORS.chartLine}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+      ${dataPoints}
+      ${xAxisLabels}
+      <text x="110" y="${SHARE_CHART_HEIGHT - 45}" font-size="24" fill="${COLORS.textSecondary}">Gestational Week</text>
+      <text x="40" y="160" font-size="24" fill="${COLORS.textSecondary}" transform="rotate(-90 40 160)">HRV (ms)</text>
+      ${
+        inflection
+          ? `
+            <line x1="${inflection.x.toFixed(2)}" y1="160" x2="${inflection.x.toFixed(2)}" y2="${SHARE_CHART_HEIGHT - 150}" stroke="${COLORS.chartInversion}" stroke-width="4" stroke-dasharray="14 10" />
+            <circle cx="${inflection.x.toFixed(2)}" cy="${inflection.y.toFixed(2)}" r="12" fill="${COLORS.chartInversion}" />
+            <text x="${inflection.x.toFixed(2)}" y="155" text-anchor="middle" font-size="22" font-weight="700" fill="${COLORS.chartInversion}">Inflection</text>
+          `
+          : ''
+      }
+    </svg>
+  `;
+}
+
+async function writeChartSvgToCache(svg: string): Promise<string> {
+  const fileSystemApi = getFileSystemApi();
+  const cacheDirectory = fileSystemApi.cacheDirectory;
+  const writer = fileSystemApi.writeAsStringAsync;
+
+  if (!cacheDirectory || !writer) {
+    throw new Error('Chart export directory is unavailable.');
+  }
+
+  const uri = `${cacheDirectory}labor-cue-chart-${Date.now()}.svg`;
+  await writer(uri, svg, {
+    encoding: fileSystemApi.EncodingType?.UTF8,
+  });
+  return uri;
 }
 
 const styles = StyleSheet.create({
@@ -719,6 +884,18 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.md,
     fontWeight: '600',
   },
+  shareChartButton: {
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  shareChartButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+  },
   exportButtons: {
     flexDirection: 'row',
     gap: SPACING.md,
@@ -747,3 +924,8 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
 });
+
+export const __testables = {
+  buildShareableChartSvg,
+  writeChartSvgToCache,
+};

@@ -47,7 +47,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
 | STORY-402 | Add confidence intervals to predictions | 5 | High | `hrvAnalysis.ts` |Leah |
-| STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | Aditya |
+| STORY-406 | Implement spline model from paper | 8 | High | `hrvAnalysis.ts` | |
 | STORY-1003 | Highlight inflection point on chart | 3 | High | `DataScreen.tsx` |Roshni|
 | STORY-1005 | Expected vs actual comparison view | 5 | Medium | `DataScreen.tsx` |Faduma |
 | STORY-903 | Mini HRV sparkline on home screen | 3 | Medium | `HomeScreen.tsx` |Emma |
@@ -65,12 +65,12 @@ This document organizes all development tasks into an Agile-style backlog with e
 |----------|-------|--------|----------|------|----------|
 | STORY-803 | Multi-step setup with progress bar | 3 | Medium | `SetupScreen.tsx` |Emma |
 | STORY-806 | Keyboard avoiding improvements | 2 | Medium | `SetupScreen.tsx` |Emma |
-| STORY-704 | Onboarding tutorial carousel | 3 | Medium | `AppNavigator.tsx` |Emma |
-| STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` | Emma|
+| STORY-704 | Onboarding tutorial carousel | 3 | Medium | `AppNavigator.tsx` | Emma|
+| STORY-905 | Educational tooltips (coach marks) | 3 | Medium | `HomeScreen.tsx` |Emma |
 | STORY-902 | Animated status transitions | 3 | Medium | `HomeScreen.tsx` | Leah|
-| STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | |
-| STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` | |
-| STORY-1008 | Improved tooltip positioning | 2 | Medium | `DataScreen.tsx` | |
+| STORY-702 | Custom drawer with user info | 3 | Medium | `AppNavigator.tsx` | Emma|
+| STORY-1201 | Pulse animation for urgent status | 2 | Medium | `StatusCard.tsx` |Emma |
+| STORY-1008 | Improved tooltip positioning | 2 | Medium | `DataScreen.tsx` |Sydney |
 | STORY-602 | Optimistic updates in context | 3 | Medium | `UserContext.tsx` |Roshni|
 
 ---
@@ -81,9 +81,9 @@ This document organizes all development tasks into an Agile-style backlog with e
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
 | STORY-506 | PDF export with charts | 5 | High | `storage.ts` |Roshni|
-| STORY-1007 | Shareable chart image | 3 | Medium | `DataScreen.tsx` | |
-| STORY-1104 | Healthcare provider management | 3 | Medium | `SettingsScreen.tsx` | |
-| STORY-504 | Import data from CSV/JSON | 3 | Medium | `storage.ts` | |
+| STORY-1007 | Shareable chart image | 3 | Medium | `DataScreen.tsx` |Roshni|
+| STORY-1104 | Healthcare provider management | 3 | Medium | `SettingsScreen.tsx` | Leah |
+| STORY-504 | Import data from CSV/JSON | 3 | Medium | `storage.ts` |Emma |
 
 ---
 
@@ -92,8 +92,8 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-103 | BLE communication types | 5 | High | `types/index.ts` | |
-| STORY-1101 | Device pairing UI | 8 | High | `SettingsScreen.tsx` | |
+| STORY-103 | BLE communication types | 5 | High | `types/index.ts` | Leah|
+| STORY-1101 | Device pairing UI | 8 | High | `SettingsScreen.tsx` |Roshni |
 | STORY-1102 | Notification scheduling | 5 | High | `SettingsScreen.tsx` | |
 
 ---
