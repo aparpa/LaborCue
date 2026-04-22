@@ -92,7 +92,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-103 | BLE communication types | 5 | High | `types/index.ts` | |
+| STORY-103 | BLE communication types | 5 | High | `types/index.ts` | Leah|
 | STORY-1101 | Device pairing UI | 8 | High | `SettingsScreen.tsx` |Roshni |
 | STORY-1102 | Notification scheduling | 5 | High | `SettingsScreen.tsx` | |
 
