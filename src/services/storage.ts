@@ -61,9 +61,278 @@ import {
   UserProfile,
   HRVReading,
   AppSettings,
-  StorageKeys
+  StorageKeys,
+  HRVAnalysisResult,
 } from '../types';
 import { DATABASE_NAME, MAX_STORED_READINGS } from '../constants';
+
+declare const require: (moduleName: string) => unknown;
+
+const PDF_PAGE_WIDTH = 612;
+const PDF_PAGE_HEIGHT = 792;
+const PDF_MARGIN = 48;
+const PDF_CHART_LEFT = 80;
+const PDF_CHART_RIGHT = PDF_PAGE_WIDTH - 72;
+const PDF_CHART_BOTTOM = 390;
+const PDF_CHART_TOP = 590;
+
+type FileSystemModule = {
+  cacheDirectory?: string | null;
+  EncodingType?: { UTF8?: string };
+  writeAsStringAsync?: (
+    uri: string,
+    contents: string,
+    options?: { encoding?: string }
+  ) => Promise<void>;
+  default?: FileSystemModule;
+};
+
+type PdfChartPoint = {
+  reading: HRVReading;
+  x: number;
+  y: number;
+};
+
+function getFileSystemApi(): FileSystemModule {
+  const module = require('expo-file-system') as FileSystemModule;
+  return module.writeAsStringAsync ? module : (module.default ?? {});
+}
+
+function escapePdfText(value: string): string {
+  return value
+    .replace(/[^\x20-\x7E]/g, '?')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/\r?\n/g, ' ');
+}
+
+function formatPdfDate(value?: string): string {
+  if (!value) {
+    return 'Not available';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Not available';
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function humanizeEnumValue(value?: string): string {
+  if (!value) {
+    return 'Not available';
+  }
+
+  return value.replace(/_/g, ' ');
+}
+
+function wrapPdfText(value: string, maxChars = 72): string[] {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return [''];
+  }
+
+  const lines: string[] = [];
+  let currentLine = words[0];
+
+  for (const word of words.slice(1)) {
+    if ((currentLine + ' ' + word).length <= maxChars) {
+      currentLine += ' ' + word;
+      continue;
+    }
+
+    lines.push(currentLine);
+    currentLine = word;
+  }
+
+  lines.push(currentLine);
+  return lines;
+}
+
+function getPdfChartPoints(readings: HRVReading[]): PdfChartPoint[] {
+  if (readings.length === 0) {
+    return [];
+  }
+
+  const values = readings.map((reading) => reading.hrvValue);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const range = maxValue - minValue || 1;
+
+  return readings.map((reading, index) => ({
+    reading,
+    x: readings.length === 1
+      ? (PDF_CHART_LEFT + PDF_CHART_RIGHT) / 2
+      : PDF_CHART_LEFT + ((PDF_CHART_RIGHT - PDF_CHART_LEFT) * index) / (readings.length - 1),
+    y: PDF_CHART_BOTTOM + ((reading.hrvValue - minValue) / range) * (PDF_CHART_TOP - PDF_CHART_BOTTOM),
+  }));
+}
+
+function getInflectionPoint(
+  analysis: HRVAnalysisResult | null | undefined,
+  readings: HRVReading[]
+): PdfChartPoint | null {
+  if (!analysis?.inversionDetectedAt) {
+    return null;
+  }
+
+  const threshold = new Date(analysis.inversionDetectedAt).getTime();
+  if (Number.isNaN(threshold)) {
+    return null;
+  }
+
+  return getPdfChartPoints(readings).find(
+    (point) => new Date(point.reading.timestamp).getTime() >= threshold
+  ) ?? null;
+}
+
+function buildPdfObject(index: number, body: string): string {
+  return `${index} 0 obj\n${body}\nendobj\n`;
+}
+
+function buildPdfFile(objects: string[]): string {
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+
+  for (const object of objects) {
+    offsets.push(pdf.length);
+    pdf += object;
+  }
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+
+  for (const offset of offsets.slice(1)) {
+    pdf += `${offset.toString().padStart(10, '0')} 00000 n \n`;
+  }
+
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  pdf += `startxref\n${xrefOffset}\n%%EOF`;
+  return pdf;
+}
+
+function buildPdfReportDocument(
+  readings: HRVReading[],
+  analysis: HRVAnalysisResult | null | undefined,
+  profile: UserProfile | null
+): string {
+  const commands: string[] = [];
+  const chartPoints = getPdfChartPoints(readings);
+  const inflectionPoint = getInflectionPoint(analysis, readings);
+  const latestReading = readings[readings.length - 1];
+  const recommendation = analysis?.recommendation
+    ?? analysis?.message
+    ?? 'Continue tracking regularly and share this report with your provider if you have concerns.';
+
+  const addText = (
+    x: number,
+    y: number,
+    text: string,
+    size = 12,
+    font = 'F1',
+    color = '0 0 0'
+  ): void => {
+    commands.push(
+      `BT /${font} ${size} Tf ${color} rg 1 0 0 1 ${x} ${y} Tm (${escapePdfText(text)}) Tj ET`
+    );
+  };
+
+  commands.push('0.96 0.97 0.99 rg');
+  commands.push(`24 24 ${PDF_PAGE_WIDTH - 48} ${PDF_PAGE_HEIGHT - 48} re f`);
+
+  addText(PDF_MARGIN, 744, 'Labor Cue HRV Report', 24, 'F2', '0.09 0.13 0.18');
+  addText(PDF_MARGIN, 724, `Generated: ${formatPdfDate(new Date().toISOString())}`, 11, 'F1', '0.35 0.39 0.45');
+  addText(
+    PDF_MARGIN,
+    708,
+    `Due date: ${formatPdfDate(profile?.estimatedDueDate)}    Pregnancy start: ${formatPdfDate(profile?.pregnancyStartDate)}`,
+    11,
+    'F1',
+    '0.35 0.39 0.45'
+  );
+  addText(PDF_MARGIN, 692, `Readings included: ${readings.length}`, 11, 'F1', '0.35 0.39 0.45');
+  addText(
+    PDF_MARGIN,
+    676,
+    `Analysis summary: ${analysis ? `${humanizeEnumValue(analysis.currentTrend)} trend - ${humanizeEnumValue(analysis.inversionStatus)} - ${analysis.confidence} confidence` : 'No analysis available yet'}`,
+    11,
+    'F1',
+    '0.35 0.39 0.45'
+  );
+
+  commands.push('0.86 0.89 0.94 rg');
+  commands.push(`${PDF_MARGIN} 364 ${PDF_PAGE_WIDTH - (PDF_MARGIN * 2)} 250 re f`);
+  commands.push('0.78 0.82 0.88 RG 1 w');
+  commands.push(`${PDF_CHART_LEFT} ${PDF_CHART_BOTTOM} m ${PDF_CHART_LEFT} ${PDF_CHART_TOP} l ${PDF_CHART_RIGHT} ${PDF_CHART_TOP} l S`);
+
+  if (chartPoints.length === 0) {
+    addText(PDF_CHART_LEFT, 476, 'No HRV readings available for this report.', 14, 'F1', '0.35 0.39 0.45');
+  } else {
+    const values = readings.map((reading) => reading.hrvValue);
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const path = chartPoints
+      .map((point, index) =>
+        `${index === 0 ? 'm' : 'l'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`
+      )
+      .join(' ');
+
+    commands.push('0.42 0.31 0.90 RG 2.5 w');
+    commands.push(path);
+    commands.push('S');
+
+    commands.push('0.42 0.31 0.90 rg');
+    for (const point of chartPoints) {
+      commands.push(`${(point.x - 2).toFixed(2)} ${(point.y - 2).toFixed(2)} 4 4 re f`);
+    }
+
+    if (inflectionPoint) {
+      commands.push('0.89 0.27 0.23 RG 1.5 w [6 4] 0 d');
+      commands.push(`${inflectionPoint.x.toFixed(2)} ${PDF_CHART_BOTTOM} m ${inflectionPoint.x.toFixed(2)} ${PDF_CHART_TOP} l S`);
+      commands.push('[] 0 d');
+      addText(inflectionPoint.x - 28, PDF_CHART_TOP + 10, 'Inflection', 10, 'F2', '0.89 0.27 0.23');
+    }
+
+    addText(PDF_CHART_LEFT - 28, PDF_CHART_TOP - 4, `${maxValue.toFixed(1)} ms`, 10, 'F1', '0.35 0.39 0.45');
+    addText(PDF_CHART_LEFT - 28, PDF_CHART_BOTTOM - 4, `${minValue.toFixed(1)} ms`, 10, 'F1', '0.35 0.39 0.45');
+
+    for (const point of chartPoints.filter((_, index) =>
+      index === 0 || index === chartPoints.length - 1 || index % 3 === 0
+    )) {
+      addText(point.x - 10, PDF_CHART_BOTTOM - 18, `W${point.reading.gestationalWeek}`, 9, 'F1', '0.35 0.39 0.45');
+    }
+  }
+
+  addText(PDF_MARGIN, 334, 'Clinical Summary', 14, 'F2', '0.09 0.13 0.18');
+  addText(PDF_MARGIN, 316, `Latest reading: ${latestReading ? `${latestReading.hrvValue.toFixed(1)} ms on ${formatPdfDate(latestReading.timestamp)}` : 'Not available'}`, 11, 'F1', '0.18 0.20 0.24');
+  addText(PDF_MARGIN, 300, `Current status: ${analysis ? humanizeEnumValue(analysis.inversionStatus) : 'Not available'}`, 11, 'F1', '0.18 0.20 0.24');
+  addText(PDF_MARGIN, 284, `Trend confidence: ${analysis?.confidence ?? 'Not available'}`, 11, 'F1', '0.18 0.20 0.24');
+  addText(PDF_MARGIN, 256, 'Recommendation', 14, 'F2', '0.09 0.13 0.18');
+
+  let recommendationY = 238;
+  for (const line of wrapPdfText(recommendation)) {
+    addText(PDF_MARGIN, recommendationY, line, 11, 'F1', '0.18 0.20 0.24');
+    recommendationY -= 14;
+  }
+
+  const content = commands.join('\n');
+  const objects = [
+    buildPdfObject(1, '<< /Type /Catalog /Pages 2 0 R >>'),
+    buildPdfObject(2, '<< /Type /Pages /Count 1 /Kids [3 0 R] >>'),
+    buildPdfObject(
+      3,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_PAGE_WIDTH} ${PDF_PAGE_HEIGHT}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>`
+    ),
+    buildPdfObject(4, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`),
+    buildPdfObject(5, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'),
+    buildPdfObject(6, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'),
+  ];
+
+  return buildPdfFile(objects);
+}
 
 // ============================================================================
 // DATABASE INITIALIZATION
@@ -527,8 +796,29 @@ export async function exportDataAsCSV(): Promise<string> {
   return header + rows;
 }
 
-// STORY-506 start: add PDF export generation here, reusing the chart
-// rendering/data used on the Data screen.
+export async function exportDataAsPDF(
+  readingsOverride?: HRVReading[],
+  analysis?: HRVAnalysisResult | null
+): Promise<string> {
+  const fileSystemApi = getFileSystemApi();
+  const writer = fileSystemApi.writeAsStringAsync;
+  const cacheDirectory = fileSystemApi.cacheDirectory;
+
+  if (!writer || !cacheDirectory) {
+    throw new Error('PDF export directory is unavailable.');
+  }
+
+  const readings = readingsOverride ?? await getAllHRVReadings();
+  const profile = await loadUserProfile();
+  const pdf = buildPdfReportDocument(readings, analysis, profile);
+  const uri = `${cacheDirectory}labor-cue-report-${Date.now()}.pdf`;
+
+  await writer(uri, pdf, {
+    encoding: fileSystemApi.EncodingType?.UTF8,
+  });
+
+  return uri;
+}
 
 // STORY-502 start: add cloud backup upload/download helpers here (opt-in
 // flow, encryption, and restore).
@@ -558,3 +848,7 @@ export async function clearAllData(): Promise<void> {
     throw error;
   }
 }
+
+export const __testables = {
+  buildPdfReportDocument,
+};

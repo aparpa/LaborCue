@@ -98,7 +98,7 @@ import {
   getVisibleReadings,
   getWindowSize,
 } from '../utils/chartWindow';
-import { exportDataAsCSV, exportDataAsJSON } from '../services/storage';
+import { exportDataAsCSV, exportDataAsJSON, exportDataAsPDF } from '../services/storage';
 import { calculateWeeklyAverages } from '../services/hrvAnalysis';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, CHART_CONFIG } from '../constants';
 import type { HRVReading, HRVAnalysisResult } from '../types';
@@ -192,6 +192,35 @@ export default function DataScreen(): JSX.Element {
       setIsExporting(false);
     }
   }, []);
+
+  const handleExportPdf = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      const sharingApi = getSharingApi();
+      const pdfUri = await exportDataAsPDF(visibleReadings, analysisResult);
+      const canUseNativeShare = await sharingApi.isAvailableAsync?.();
+
+      if (canUseNativeShare) {
+        await sharingApi.shareAsync?.(pdfUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share PDF Report',
+          UTI: 'com.adobe.pdf',
+        });
+        return;
+      }
+
+      await Share.share({
+        title: 'Labor Cue PDF Report',
+        message: `Labor Cue PDF report: ${pdfUri}`,
+        url: pdfUri,
+      });
+    } catch (error) {
+      console.error('PDF export failed:', error);
+      Alert.alert('Export Failed', 'Unable to export a PDF report. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [analysisResult, visibleReadings]);
 
   const handleShareChart = useCallback(async () => {
     setIsExporting(true);
@@ -468,6 +497,13 @@ export default function DataScreen(): JSX.Element {
           Share your HRV data with your healthcare provider
         </Text>
         <TouchableOpacity
+          style={[styles.pdfExportButton, isExporting && styles.exportButtonDisabled]}
+          onPress={handleExportPdf}
+          disabled={isExporting}
+        >
+          <Text style={styles.pdfExportButtonText}>Export PDF Report</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.shareChartButton, isExporting && styles.exportButtonDisabled]}
           onPress={handleShareChart}
           disabled={isExporting}
@@ -573,7 +609,7 @@ function getPointCoordinates(readings: HRVReading[]) {
   const chartRight = SHARE_CHART_WIDTH - 80;
   const chartTop = 160;
   const chartBottom = SHARE_CHART_HEIGHT - 150;
-  const values = readings.map(reading => reading.hrvValue);
+  const values = readings.map((reading) => reading.hrvValue);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
@@ -592,9 +628,9 @@ function buildShareableChartSvg(
   analysis: HRVAnalysisResult | null | undefined
 ): string {
   const points = getPointCoordinates(readings);
-  const pathData = points.map((point, index) =>
-    `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`
-  ).join(' ');
+  const pathData = points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(' ');
   const inflectionPoint = getInflectionPoint(analysis, readings);
   const inflection = inflectionPoint ? points[inflectionPoint.index] : null;
   const summary = analysis
@@ -835,6 +871,18 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: COLORS.textSecondary,
     marginBottom: SPACING.md,
+  },
+  pdfExportButton: {
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  pdfExportButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
   },
   shareChartButton: {
     backgroundColor: COLORS.primaryDark,
