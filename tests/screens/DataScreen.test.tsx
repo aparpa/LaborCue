@@ -37,8 +37,8 @@ jest.mock('react-native', () => {
       create: (styles: any) => styles,
       flatten: (styles: any) => styles,
     },
-    Alert: { alert: mockAlert },
-    Share: { share: mockShare },
+    Alert: { alert: (...args: unknown[]) => mockAlert(...args) },
+    Share: { share: (...args: unknown[]) => mockShare(...args) },
   };
 });
 
@@ -215,6 +215,39 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
       expect.objectContaining({
         mimeType: 'image/svg+xml',
         dialogTitle: 'Share HRV Chart',
+      })
+    );
+  });
+
+  it('falls back to sharing the generated chart file URL when native sharing is unavailable', async () => {
+    const readings = makeReadings(6, 28);
+    mockIsAvailableAsync.mockResolvedValue(false);
+
+    mockUseUser.mockReturnValue({
+      hrvReadings: readings,
+      analysisResult: {
+        currentTrend: 'stable',
+        inversionStatus: InversionStatus.ON_TRACK,
+        confidence: 'medium',
+        lastAnalyzedAt: new Date().toISOString(),
+        message: 'Stable trend',
+      },
+      currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+    });
+
+    render(React.createElement(DataScreen, null));
+
+    fireEvent.press(screen.getByText('Share Chart Image'));
+
+    await waitFor(() => {
+      expect(mockWriteAsStringAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(mockShareAsync).not.toHaveBeenCalled();
+    expect(mockShare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Labor Cue HRV Chart',
+        message: expect.stringContaining('file:///cache/labor-cue-chart-'),
+        url: expect.stringContaining('file:///cache/labor-cue-chart-'),
       })
     );
   });

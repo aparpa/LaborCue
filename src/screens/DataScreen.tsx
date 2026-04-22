@@ -213,6 +213,7 @@ export default function DataScreen(): JSX.Element {
       await Share.share({
         message: `HRV chart export: ${svgUri}`,
         title: 'Labor Cue HRV Chart',
+        url: svgUri,
       });
     } catch (error) {
       console.error('Share chart failed:', error);
