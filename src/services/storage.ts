@@ -55,6 +55,8 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -63,13 +65,69 @@ import {
   AppSettings,
   StorageKeys
 } from '../types';
-import { DATABASE_NAME, MAX_STORED_READINGS } from '../constants';
+import { DATABASE_NAME, MAX_STORED_READINGS, VALID_HRV_RANGE } from '../constants';
+import {
+  calculateGestationalDay,
+  calculateGestationalWeek,
+  parseFlexibleDate,
+} from '../utils/dateUtils';
 
 // ============================================================================
 // DATABASE INITIALIZATION
 // ============================================================================
 
 let db: SQLite.SQLiteDatabase | null = null;
+
+type ImportFormat = 'csv' | 'json';
+
+type ImportedReadingInput = Partial<Omit<HRVReading, 'id' | 'source'>> & {
+  source?: string;
+};
+
+export interface ImportHRVDataResult {
+  format: ImportFormat;
+  importedCount: number;
+  skippedCount: number;
+  readings: HRVReading[];
+  errors: string[];
+  fileName?: string;
+}
+
+interface ParsedImportResult {
+  validReadings: Omit<HRVReading, 'id'>[];
+  errors: string[];
+}
+
+const CSV_HEADER_ALIASES: Record<string, string> = {
+  date: 'timestamp',
+  datetime: 'timestamp',
+  time: 'timestamp',
+  recordedat: 'timestamp',
+  recorded_at: 'timestamp',
+  timestamp: 'timestamp',
+  hrv: 'hrvValue',
+  hrvms: 'hrvValue',
+  'hrv(ms)': 'hrvValue',
+  'hrv_ms': 'hrvValue',
+  rmssd: 'hrvValue',
+  value: 'hrvValue',
+  hrvvalue: 'hrvValue',
+  gestationalweek: 'gestationalWeek',
+  gestational_week: 'gestationalWeek',
+  week: 'gestationalWeek',
+  gestationalday: 'gestationalDay',
+  gestational_day: 'gestationalDay',
+  day: 'gestationalDay',
+  source: 'source',
+  metadata: 'metadata',
+  notes: 'notes',
+  deviceid: 'deviceId',
+  device_id: 'deviceId',
+  sleepduration: 'sleepDuration',
+  sleep_duration: 'sleepDuration',
+  sleepquality: 'sleepQuality',
+  sleep_quality: 'sleepQuality',
+};
 
 /**
  * Initialize the SQLite database and create tables if they don't exist
@@ -243,6 +301,76 @@ export async function saveMultipleHRVReadings(
   }
   
   return savedReadings;
+}
+
+/**
+ * Import HRV readings from a user-selected CSV or JSON file.
+ */
+export async function importHRVDataFromFile(): Promise<ImportHRVDataResult> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: ['text/csv', 'text/plain', 'application/json', 'text/json'],
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+
+  if (result.canceled || result.assets.length === 0) {
+    return {
+      format: 'json',
+      importedCount: 0,
+      skippedCount: 0,
+      readings: [],
+      errors: ['Import cancelled'],
+    };
+  }
+
+  const asset = result.assets[0];
+  const format = detectImportFormat(asset.name, asset.mimeType);
+  const rawData = await FileSystem.readAsStringAsync(asset.uri, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
+
+  const imported = await importHRVData(rawData, format);
+  return {
+    ...imported,
+    fileName: asset.name,
+  };
+}
+
+/**
+ * Import HRV readings from raw CSV or JSON content.
+ */
+export async function importHRVData(
+  rawData: string,
+  format: ImportFormat
+): Promise<ImportHRVDataResult> {
+  const profile = await loadUserProfile();
+  const existingReadings = await getAllHRVReadings();
+  const existingKeys = new Set(existingReadings.map(buildReadingDedupKey));
+
+  const parsed = parseImportedHRVData(rawData, format, profile ?? undefined);
+  const dedupedReadings: Omit<HRVReading, 'id'>[] = [];
+  const errors = [...parsed.errors];
+
+  for (const reading of parsed.validReadings) {
+    const dedupKey = buildReadingDedupKey(reading);
+    if (existingKeys.has(dedupKey)) {
+      errors.push(`Skipped duplicate reading for ${reading.timestamp}.`);
+      continue;
+    }
+
+    existingKeys.add(dedupKey);
+    dedupedReadings.push(reading);
+  }
+
+  const savedReadings = await saveMultipleHRVReadings(dedupedReadings);
+
+  return {
+    format,
+    importedCount: savedReadings.length,
+    skippedCount: errors.length,
+    readings: savedReadings,
+    errors,
+  };
 }
 
 /**
@@ -526,6 +654,280 @@ export async function exportDataAsCSV(): Promise<string> {
   
   return header + rows;
 }
+
+function detectImportFormat(fileName?: string, mimeType?: string | null): ImportFormat {
+  const normalizedName = fileName?.toLowerCase() ?? '';
+  const normalizedMime = mimeType?.toLowerCase() ?? '';
+
+  if (normalizedName.endsWith('.csv') || normalizedMime.includes('csv')) {
+    return 'csv';
+  }
+
+  return 'json';
+}
+
+function parseImportedHRVData(
+  rawData: string,
+  format: ImportFormat,
+  profile?: UserProfile
+): ParsedImportResult {
+  const records = format === 'csv'
+    ? parseCSVRecords(rawData)
+    : parseJSONRecords(rawData);
+
+  const validReadings: Omit<HRVReading, 'id'>[] = [];
+  const errors: string[] = [];
+
+  records.forEach((record, index) => {
+    try {
+      validReadings.push(normalizeImportedReading(record, profile));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown import error';
+      errors.push(`Row ${index + 1}: ${message}`);
+    }
+  });
+
+  return { validReadings, errors };
+}
+
+function parseJSONRecords(rawData: string): ImportedReadingInput[] {
+  const parsed = JSON.parse(rawData) as unknown;
+
+  if (Array.isArray(parsed)) {
+    return parsed as ImportedReadingInput[];
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    const candidate = parsed as { readings?: unknown };
+    if (Array.isArray(candidate.readings)) {
+      return candidate.readings as ImportedReadingInput[];
+    }
+  }
+
+  throw new Error('JSON import must be an array of readings or an object with a readings array.');
+}
+
+function parseCSVRecords(rawData: string): ImportedReadingInput[] {
+  const lines = rawData
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .filter(line => line.trim().length > 0);
+
+  if (lines.length < 2) {
+    throw new Error('CSV import must include a header row and at least one data row.');
+  }
+
+  const headers = parseCSVLine(lines[0]).map(normalizeCSVHeader);
+  const records: ImportedReadingInput[] = [];
+
+  for (const line of lines.slice(1)) {
+    const values = parseCSVLine(line);
+    const record: ImportedReadingInput = {};
+
+    headers.forEach((header, index) => {
+      const value = values[index]?.trim();
+      if (!header || value === undefined || value === '') {
+        return;
+      }
+
+      if (header === 'notes' || header === 'deviceId' || header === 'sleepDuration' || header === 'sleepQuality') {
+        const metadata = typeof record.metadata === 'object' && record.metadata !== null
+          ? record.metadata
+          : {};
+        (metadata as Record<string, unknown>)[header] = value;
+        record.metadata = metadata;
+        return;
+      }
+
+      (record as Record<string, unknown>)[header] = value;
+    });
+
+    records.push(record);
+  }
+
+  return records;
+}
+
+function parseCSVLine(line: string): string[] {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values;
+}
+
+function normalizeCSVHeader(header: string): string {
+  const compact = header.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9_()]/g, '');
+  return CSV_HEADER_ALIASES[compact] ?? header.trim();
+}
+
+function normalizeImportedReading(
+  record: ImportedReadingInput,
+  profile?: UserProfile
+): Omit<HRVReading, 'id'> {
+  if (!record || typeof record !== 'object') {
+    throw new Error('Reading must be an object.');
+  }
+
+  const timestamp = normalizeTimestamp(record.timestamp);
+  const hrvValue = normalizeHRVValue(record.hrvValue);
+  const metadata = normalizeMetadata(record.metadata);
+  const gestationalAge = normalizeGestationalAge(record, timestamp, profile);
+
+  return {
+    timestamp,
+    hrvValue,
+    gestationalWeek: gestationalAge.gestationalWeek,
+    gestationalDay: gestationalAge.gestationalDay,
+    source: 'imported',
+    metadata,
+  };
+}
+
+function normalizeTimestamp(value: unknown): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('Missing timestamp/date.');
+  }
+
+  const parsed = parseFlexibleDate(value.trim()) ?? new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid timestamp "${String(value)}".`);
+  }
+
+  return parsed.toISOString();
+}
+
+function normalizeHRVValue(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error('Missing or invalid HRV value.');
+  }
+
+  if (parsed < VALID_HRV_RANGE.min || parsed > VALID_HRV_RANGE.max) {
+    throw new Error(
+      `HRV value ${parsed} is outside the supported range (${VALID_HRV_RANGE.min}-${VALID_HRV_RANGE.max}).`
+    );
+  }
+
+  return parsed;
+}
+
+function normalizeGestationalAge(
+  record: ImportedReadingInput,
+  timestamp: string,
+  profile?: UserProfile
+): { gestationalWeek: number; gestationalDay: number } {
+  const gestationalWeek = normalizeInteger(record.gestationalWeek);
+  const gestationalDay = normalizeInteger(record.gestationalDay);
+
+  if (gestationalWeek !== null && gestationalDay !== null) {
+    validateGestationalAge(gestationalWeek, gestationalDay);
+    return { gestationalWeek, gestationalDay };
+  }
+
+  if (!profile) {
+    throw new Error('Missing gestational age and no profile is available to calculate it.');
+  }
+
+  const timestampDate = new Date(timestamp);
+  const calculatedWeek = calculateGestationalWeek(profile.pregnancyStartDate, timestampDate);
+  const calculatedDay = calculateGestationalDay(profile.pregnancyStartDate, timestampDate);
+  validateGestationalAge(calculatedWeek, calculatedDay);
+
+  return {
+    gestationalWeek: calculatedWeek,
+    gestationalDay: calculatedDay,
+  };
+}
+
+function normalizeInteger(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function validateGestationalAge(gestationalWeek: number, gestationalDay: number): void {
+  if (gestationalWeek < 0 || gestationalWeek > 45) {
+    throw new Error(`Gestational week ${gestationalWeek} is out of range.`);
+  }
+
+  if (gestationalDay < 0 || gestationalDay > 6) {
+    throw new Error(`Gestational day ${gestationalDay} must be between 0 and 6.`);
+  }
+}
+
+function normalizeMetadata(value: unknown): HRVReading['metadata'] | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as HRVReading['metadata'];
+    } catch {
+      return { notes: value };
+    }
+  }
+
+  if (typeof value === 'object') {
+    const metadata = { ...(value as Record<string, unknown>) };
+    if (metadata.sleepDuration !== undefined) {
+      metadata.sleepDuration = Number(metadata.sleepDuration);
+    }
+    if (metadata.sleepQuality !== undefined) {
+      metadata.sleepQuality = Number(metadata.sleepQuality);
+    }
+    return metadata as HRVReading['metadata'];
+  }
+
+  return undefined;
+}
+
+function buildReadingDedupKey(reading: Omit<HRVReading, 'id'> | HRVReading): string {
+  return [
+    new Date(reading.timestamp).toISOString(),
+    reading.hrvValue.toFixed(4),
+    reading.gestationalWeek,
+    reading.gestationalDay,
+  ].join('|');
+}
+
+export const __testables = {
+  detectImportFormat,
+  parseImportedHRVData,
+  parseCSVLine,
+  parseCSVRecords,
+  parseJSONRecords,
+  normalizeImportedReading,
+  buildReadingDedupKey,
+};
 
 // STORY-506 start: add PDF export generation here, reusing the chart
 // rendering/data used on the Data screen.
