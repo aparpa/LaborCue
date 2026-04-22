@@ -68,7 +68,7 @@
  * =============================================================================
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -81,7 +81,16 @@ import {
 } from 'react-native';
 
 import { useUser } from '../context/UserContext';
-import { clearAllData, saveHRVReading } from '../services/storage';
+import { clearAllData, loadAppSettings, saveAppSettings, saveHRVReading } from '../services/storage';
+import {
+  cancelDailySyncReminder,
+  DEFAULT_REMINDER_TIME,
+  formatReminderTime,
+  getReminderTimeParts,
+  scheduleDailySyncReminder,
+  shiftReminderTime,
+  toggleReminderPeriod,
+} from '../services/notifications';
 import { formatDate, formatGestationalAge } from '../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants';
 import type { HRVReading } from '../types';
@@ -99,6 +108,36 @@ export default function SettingsScreen(): JSX.Element {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [reminderTime, setReminderTime] = useState(DEFAULT_REMINDER_TIME);
+  const [isUpdatingReminder, setIsUpdatingReminder] = useState(false);
+
+  useEffect(() => {
+    setNameInput(profile?.name || '');
+  }, [profile?.name]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSettings = async () => {
+      try {
+        const settings = await loadAppSettings();
+        if (!isMounted) {
+          return;
+        }
+
+        setNotificationsEnabled(settings.notificationsEnabled);
+        setReminderTime(settings.reminderTime || DEFAULT_REMINDER_TIME);
+      } catch (error) {
+        console.error('Failed to load notification settings:', error);
+      }
+    };
+
+    void loadSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   // Handle name edit
   const handleSaveName = async () => {
@@ -164,6 +203,70 @@ export default function SettingsScreen(): JSX.Element {
       ]
     );
   };
+
+  const persistReminderSettings = async (
+    nextNotificationsEnabled: boolean,
+    nextReminderTime: string
+  ): Promise<boolean> => {
+    setIsUpdatingReminder(true);
+
+    try {
+      if (nextNotificationsEnabled) {
+        const didScheduleReminder = await scheduleDailySyncReminder(nextReminderTime);
+        if (!didScheduleReminder) {
+          const existingSettings = await loadAppSettings();
+          await saveAppSettings({
+            ...existingSettings,
+            notificationsEnabled: false,
+            reminderTime: nextReminderTime,
+          });
+          setNotificationsEnabled(false);
+          setReminderTime(nextReminderTime);
+          Alert.alert(
+            'Notifications Off',
+            'Notification permission is required before daily sync reminders can be scheduled.'
+          );
+          return false;
+        }
+      } else {
+        await cancelDailySyncReminder();
+      }
+
+      const existingSettings = await loadAppSettings();
+      await saveAppSettings({
+        ...existingSettings,
+        notificationsEnabled: nextNotificationsEnabled,
+        reminderTime: nextReminderTime,
+      });
+      setNotificationsEnabled(nextNotificationsEnabled);
+      setReminderTime(nextReminderTime);
+      return true;
+    } catch (error) {
+      console.error('Failed to update reminder settings:', error);
+      Alert.alert('Error', 'Failed to update reminder settings.');
+      return false;
+    } finally {
+      setIsUpdatingReminder(false);
+    }
+  };
+
+  const handleToggleNotifications = async (value: boolean) => {
+    if (isUpdatingReminder) {
+      return;
+    }
+
+    await persistReminderSettings(value, reminderTime);
+  };
+
+  const handleReminderTimeChange = async (nextReminderTime: string) => {
+    if (isUpdatingReminder || nextReminderTime === reminderTime) {
+      return;
+    }
+
+    await persistReminderSettings(notificationsEnabled, nextReminderTime);
+  };
+
+  const reminderTimeParts = getReminderTimeParts(reminderTime);
   
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -233,13 +336,93 @@ export default function SettingsScreen(): JSX.Element {
         <View style={styles.settingRow}>
           <Text style={styles.settingLabel}>Sync Reminders</Text>
           <Switch
+            testID="sync-reminder-switch"
             value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
+            onValueChange={(value) => {
+              void handleToggleNotifications(value);
+            }}
             trackColor={{ false: COLORS.border, true: COLORS.primaryLight }}
             thumbColor={notificationsEnabled ? COLORS.primary : COLORS.neutral}
           />
         </View>
-        {/* STORY-1102 start: add reminder time picker and scheduling here. */}
+        <View style={styles.reminderCard}>
+          <View style={styles.reminderSummaryRow}>
+            <Text style={styles.reminderSummaryLabel}>Reminder time</Text>
+            <Text testID="reminder-time-value" style={styles.reminderSummaryValue}>
+              {formatReminderTime(reminderTime)}
+            </Text>
+          </View>
+          <Text style={styles.reminderHelperText}>
+            We will remind you once a day to sync your wearable data with Labor Cue.
+          </Text>
+
+          <View style={styles.timeControlsRow}>
+            <View style={styles.timeControlCard}>
+              <Text style={styles.timeControlLabel}>Hour</Text>
+              <TouchableOpacity
+                accessibilityLabel="Increase reminder hour"
+                disabled={isUpdatingReminder}
+                onPress={() => {
+                  void handleReminderTimeChange(shiftReminderTime(reminderTime, 60));
+                }}
+                style={styles.timeAdjustButton}
+              >
+                <Text style={styles.timeAdjustButtonText}>+</Text>
+              </TouchableOpacity>
+              <Text style={styles.timeControlValue}>{reminderTimeParts.hourLabel}</Text>
+              <TouchableOpacity
+                accessibilityLabel="Decrease reminder hour"
+                disabled={isUpdatingReminder}
+                onPress={() => {
+                  void handleReminderTimeChange(shiftReminderTime(reminderTime, -60));
+                }}
+                style={styles.timeAdjustButton}
+              >
+                <Text style={styles.timeAdjustButtonText}>-</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.timeControlCard}>
+              <Text style={styles.timeControlLabel}>Minute</Text>
+              <TouchableOpacity
+                accessibilityLabel="Increase reminder minute"
+                disabled={isUpdatingReminder}
+                onPress={() => {
+                  void handleReminderTimeChange(shiftReminderTime(reminderTime, 15));
+                }}
+                style={styles.timeAdjustButton}
+              >
+                <Text style={styles.timeAdjustButtonText}>+</Text>
+              </TouchableOpacity>
+              <Text style={styles.timeControlValue}>{reminderTimeParts.minuteLabel}</Text>
+              <TouchableOpacity
+                accessibilityLabel="Decrease reminder minute"
+                disabled={isUpdatingReminder}
+                onPress={() => {
+                  void handleReminderTimeChange(shiftReminderTime(reminderTime, -15));
+                }}
+                style={styles.timeAdjustButton}
+              >
+                <Text style={styles.timeAdjustButtonText}>-</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.timeControlCard}>
+              <Text style={styles.timeControlLabel}>AM/PM</Text>
+              <TouchableOpacity
+                accessibilityLabel="Toggle reminder period"
+                disabled={isUpdatingReminder}
+                onPress={() => {
+                  void handleReminderTimeChange(toggleReminderPeriod(reminderTime));
+                }}
+                style={[styles.periodButton, isUpdatingReminder && styles.disabledButton]}
+              >
+                <Text style={styles.periodButtonText}>{reminderTimeParts.periodLabel}</Text>
+              </TouchableOpacity>
+              <Text style={styles.timeControlHint}>15 min steps</Text>
+            </View>
+          </View>
+        </View>
       </View>
 
       {/* STORY-1105 start: add theme selection controls here. */}
@@ -414,6 +597,91 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: FONT_SIZES.sm,
     fontWeight: '500',
+  },
+  reminderCard: {
+    marginTop: SPACING.md,
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  reminderSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reminderSummaryLabel: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '500',
+    color: COLORS.textPrimary,
+  },
+  reminderSummaryValue: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  reminderHelperText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+  },
+  timeControlsRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  timeControlCard: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.sm,
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  timeControlLabel: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+  },
+  timeAdjustButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeAdjustButtonText: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  timeControlValue: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    minWidth: 36,
+    textAlign: 'center',
+  },
+  periodButton: {
+    minWidth: 64,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+  },
+  periodButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+  },
+  timeControlHint: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   actionButton: {
     backgroundColor: COLORS.backgroundSecondary,
