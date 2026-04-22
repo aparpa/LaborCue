@@ -98,7 +98,7 @@ import {
   getVisibleReadings,
   getWindowSize,
 } from '../utils/chartWindow';
-import { exportDataAsCSV, exportDataAsJSON } from '../services/storage';
+import { exportDataAsCSV, exportDataAsJSON, exportDataAsPDF } from '../services/storage';
 import { calculateWeeklyAverages } from '../services/hrvAnalysis';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, CHART_CONFIG } from '../constants';
 import type { HRVReading, HRVAnalysisResult } from '../types';
@@ -106,6 +106,22 @@ import type { HRVReading, HRVAnalysisResult } from '../types';
 const screenWidth = Dimensions.get('window').width;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
+
+declare const require: (moduleName: string) => unknown;
+
+type SharingModule = {
+  isAvailableAsync?: () => Promise<boolean>;
+  shareAsync?: (
+    uri: string,
+    options?: { mimeType?: string; dialogTitle?: string; UTI?: string }
+  ) => Promise<void>;
+  default?: SharingModule;
+};
+
+function getSharingApi(): SharingModule {
+  const module = require('expo-sharing') as SharingModule;
+  return module.shareAsync ? module : (module.default ?? {});
+}
 
 export default function DataScreen(): JSX.Element {
   const { hrvReadings, analysisResult, currentGestationalWeek } = useUser();
@@ -158,6 +174,35 @@ export default function DataScreen(): JSX.Element {
       setIsExporting(false);
     }
   }, []);
+
+  const handleExportPdf = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      const sharingApi = getSharingApi();
+      const pdfUri = await exportDataAsPDF(visibleReadings, analysisResult);
+      const canUseNativeShare = await sharingApi.isAvailableAsync?.();
+
+      if (canUseNativeShare) {
+        await sharingApi.shareAsync?.(pdfUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share PDF Report',
+          UTI: 'com.adobe.pdf',
+        });
+        return;
+      }
+
+      await Share.share({
+        title: 'Labor Cue PDF Report',
+        message: `Labor Cue PDF report: ${pdfUri}`,
+        url: pdfUri,
+      });
+    } catch (error) {
+      console.error('PDF export failed:', error);
+      Alert.alert('Export Failed', 'Unable to export a PDF report. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [analysisResult, visibleReadings]);
 
   const handlePinchStateChange = useCallback((event: PinchGestureHandlerStateChangeEvent) => {
     if (event.nativeEvent.state !== GestureState.END) return;
@@ -403,6 +448,13 @@ export default function DataScreen(): JSX.Element {
         <Text style={styles.exportDescription}>
           Share your HRV data with your healthcare provider
         </Text>
+        <TouchableOpacity
+          style={[styles.pdfExportButton, isExporting && styles.exportButtonDisabled]}
+          onPress={handleExportPdf}
+          disabled={isExporting}
+        >
+          <Text style={styles.pdfExportButtonText}>Export PDF Report</Text>
+        </TouchableOpacity>
         {/* STORY-1007 start: add a "Share Chart Image" button here. */}
         <View style={styles.exportButtons}>
           <TouchableOpacity
@@ -654,6 +706,18 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: COLORS.textSecondary,
     marginBottom: SPACING.md,
+  },
+  pdfExportButton: {
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  pdfExportButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
   },
   exportButtons: {
     flexDirection: 'row',

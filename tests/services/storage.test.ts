@@ -1,184 +1,115 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
+
 const mockGetItem = jest.fn();
 const mockSetItem = jest.fn();
 const mockMultiRemove = jest.fn();
-const mockPrintToFileAsync = jest.fn();
-const mockExecAsync = jest.fn();
-const mockGetAllAsync = jest.fn();
-const asyncStorageMock = {
-  getItem: mockGetItem,
-  setItem: mockSetItem,
-  multiRemove: mockMultiRemove,
-};
+const mockWriteAsStringAsync = jest.fn();
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
-  default: asyncStorageMock,
-  ...asyncStorageMock,
+  default: {
+    getItem: (...args: unknown[]) => mockGetItem(...args),
+    setItem: (...args: unknown[]) => mockSetItem(...args),
+    multiRemove: (...args: unknown[]) => mockMultiRemove(...args),
+  },
 }));
 
 jest.mock('expo-sqlite', () => ({
-  openDatabaseAsync: jest.fn(async () => ({
-    execAsync: mockExecAsync,
-    getAllAsync: mockGetAllAsync,
-  })),
+  __esModule: true,
+  openDatabaseAsync: jest.fn(),
 }));
 
-jest.mock('uuid', () => ({
-  v4: jest.fn(() => 'test-uuid'),
+jest.mock('expo-file-system', () => ({
+  __esModule: true,
+  cacheDirectory: 'file:///cache/',
+  EncodingType: { UTF8: 'utf8' },
+  writeAsStringAsync: (...args: unknown[]) => mockWriteAsStringAsync(...args),
 }));
 
-jest.mock('expo-print', () => ({
-  printToFileAsync: mockPrintToFileAsync,
-}), { virtual: true });
-
-import { __testables, exportDataAsPDF } from '../../src/services/storage';
-import type { HRVAnalysisResult, HRVReading, UserProfile } from '../../src/types';
-import { InversionStatus } from '../../src/types';
-
-describe('storage PDF export', () => {
-  let consoleErrorSpy: jest.SpyInstance;
-  let consoleLogSpy: jest.SpyInstance;
-
-  const profile: UserProfile = {
-    id: 'profile-1',
-    name: 'Casey Rivera',
-    pregnancyStartDate: '2024-01-01T00:00:00.000Z',
-    estimatedDueDate: '2024-10-07T00:00:00.000Z',
-    currentWeeksPregnant: 30,
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-05-01T00:00:00.000Z',
-    isFirstLaunch: false,
-  };
-
-  const readings: HRVReading[] = [
-    {
-      id: 'r1',
-      timestamp: '2024-07-01T00:00:00.000Z',
-      hrvValue: 46,
-      gestationalWeek: 28,
-      gestationalDay: 0,
-      source: 'manual',
-    },
-    {
-      id: 'r2',
-      timestamp: '2024-07-03T00:00:00.000Z',
-      hrvValue: 51,
-      gestationalWeek: 28,
-      gestationalDay: 2,
-      source: 'device',
-    },
-    {
-      id: 'r3',
-      timestamp: '2024-07-05T00:00:00.000Z',
-      hrvValue: 49,
-      gestationalWeek: 28,
-      gestationalDay: 4,
-      source: 'manual',
-    },
-  ];
-
+describe('storage STORY-506 PDF export', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockExecAsync.mockResolvedValue(undefined);
-    mockGetAllAsync.mockResolvedValue([]);
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    mockWriteAsStringAsync.mockResolvedValue(undefined);
+    mockGetItem.mockResolvedValue(
+      JSON.stringify({
+        id: 'profile-1',
+        pregnancyStartDate: '2026-01-01T00:00:00.000Z',
+        estimatedDueDate: '2026-10-08T00:00:00.000Z',
+        currentWeeksPregnant: 28,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        isFirstLaunch: false,
+      })
+    );
   });
 
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-    consoleLogSpy.mockRestore();
-  });
-
-  it('builds report HTML with patient, chart, summary, and recent readings', () => {
-    const analysis: HRVAnalysisResult = {
-      currentTrend: 'stable',
-      inversionStatus: InversionStatus.ON_TRACK,
-      confidence: 'medium',
-      lastAnalyzedAt: '2024-07-05T00:00:00.000Z',
-      message: 'Trend remains stable this week.',
-      recommendation: 'Continue routine monitoring.',
-    };
-
-    const html = __testables.buildPDFReportHtml({
-      profile,
-      readings,
-      analysis,
-      exportedAt: '2024-07-06T00:00:00.000Z',
-    });
-
-    expect(html).toContain('Labor Cue HRV Report');
-    expect(html).toContain('Casey Rivera');
-    expect(html).toContain('HRV Chart');
-    expect(html).toContain('Analysis Summary');
-    expect(html).toContain('Continue routine monitoring.');
-    expect(html).toContain('Trend remains stable this week.');
-    expect(html).toContain('<svg');
-    expect(html).toContain('Jul 5, 2024');
-  });
-
-  it('exports a PDF file using generated HTML', async () => {
-    mockGetItem.mockResolvedValue(JSON.stringify(profile));
-    mockGetAllAsync.mockResolvedValue([
+  it('builds a one-page PDF report with chart and recommendation content', () => {
+    const { __testables } = require('../../src/services/storage');
+    const readings = [
       {
         id: 'r1',
-        timestamp: '2024-07-01T00:00:00.000Z',
-        hrv_value: 46,
-        gestational_week: 28,
-        gestational_day: 0,
+        timestamp: '2026-04-10T00:00:00.000Z',
+        hrvValue: 45,
+        gestationalWeek: 28,
+        gestationalDay: 0,
         source: 'manual',
-        metadata: null,
       },
       {
         id: 'r2',
-        timestamp: '2024-07-03T00:00:00.000Z',
-        hrv_value: 51,
-        gestational_week: 28,
-        gestational_day: 2,
-        source: 'device',
-        metadata: null,
-      },
-      {
-        id: 'r3',
-        timestamp: '2024-07-05T00:00:00.000Z',
-        hrv_value: 49,
-        gestational_week: 28,
-        gestational_day: 4,
+        timestamp: '2026-04-12T00:00:00.000Z',
+        hrvValue: 51,
+        gestationalWeek: 29,
+        gestationalDay: 2,
         source: 'manual',
-        metadata: null,
       },
-    ]);
-    mockPrintToFileAsync.mockResolvedValue({ uri: 'file:///tmp/labor-cue-report.pdf' });
+    ];
+    const analysis = {
+      currentTrend: 'increasing',
+      inversionStatus: 'possible',
+      confidence: 'medium',
+      inversionDetectedAt: '2026-04-12T00:00:00.000Z',
+      lastAnalyzedAt: '2026-04-12T00:00:00.000Z',
+      message: 'Trend is increasing',
+      recommendation: 'Contact your provider if symptoms change.',
+    };
 
-    const uri = await exportDataAsPDF();
+    const pdf = __testables.buildPdfReportDocument(readings, analysis, {
+      id: 'profile-1',
+      pregnancyStartDate: '2026-01-01T00:00:00.000Z',
+      estimatedDueDate: '2026-10-08T00:00:00.000Z',
+      currentWeeksPregnant: 28,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      isFirstLaunch: false,
+    });
 
-    expect(uri).toBe('file:///tmp/labor-cue-report.pdf');
-    expect(mockPrintToFileAsync).toHaveBeenCalledTimes(1);
-    expect(mockPrintToFileAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        base64: false,
-        width: 612,
-        height: 792,
-        html: expect.stringContaining('Labor Cue HRV Report'),
-      })
-    );
-    expect(mockPrintToFileAsync.mock.calls[0][0].html).toContain('HRV Chart');
-    expect(mockPrintToFileAsync.mock.calls[0][0].html).toContain('Recent Readings');
-    expect(mockPrintToFileAsync.mock.calls[0][0].html).toContain('Patient');
+    expect(pdf).toContain('%PDF-1.4');
+    expect(pdf).toContain('Labor Cue HRV Report');
+    expect(pdf).toContain('Clinical Summary');
+    expect(pdf).toContain('Contact your provider if symptoms change.');
   });
 
-  it('estimates a fallback due date when no profile exists', () => {
-    const fallbackDueDate = __testables.getFallbackDueDate([
+  it('writes the generated PDF report to the cache directory and returns its URI', async () => {
+    const { exportDataAsPDF } = require('../../src/services/storage');
+    const readings = [
       {
         id: 'r1',
-        timestamp: '2024-07-01T00:00:00.000Z',
-        hrvValue: 55,
-        gestationalWeek: 30,
-        gestationalDay: 1,
+        timestamp: '2026-04-10T00:00:00.000Z',
+        hrvValue: 45,
+        gestationalWeek: 28,
+        gestationalDay: 0,
         source: 'manual',
       },
-    ]);
+    ];
 
-    expect(fallbackDueDate).toBe('2024-09-09T00:00:00.000Z');
+    const uri = await exportDataAsPDF(readings, null);
+
+    expect(uri).toContain('file:///cache/labor-cue-report-');
+    expect(uri).toContain('.pdf');
+    expect(mockWriteAsStringAsync).toHaveBeenCalledWith(
+      expect.stringContaining('file:///cache/labor-cue-report-'),
+      expect.stringContaining('%PDF-1.4'),
+      expect.objectContaining({ encoding: 'utf8' })
+    );
   });
 });

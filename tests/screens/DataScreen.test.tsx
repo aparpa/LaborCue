@@ -7,7 +7,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-var-requires */
 
 import React from 'react';
-import { render, screen, configure } from '@testing-library/react-native';
+import { render, screen, configure, fireEvent, waitFor } from '@testing-library/react-native';
 import DataScreen from '../../src/screens/DataScreen';
 import type { HRVAnalysisResult, HRVReading } from '../../src/types';
 import { InversionStatus } from '../../src/types';
@@ -15,7 +15,13 @@ import { InversionStatus } from '../../src/types';
 jest.mock('../../src/services/storage', () => ({
   exportDataAsCSV: jest.fn(),
   exportDataAsJSON: jest.fn(),
+  exportDataAsPDF: jest.fn(),
 }));
+
+const mockShare = jest.fn();
+const mockAlert = jest.fn();
+const mockShareAsync = jest.fn();
+const mockIsAvailableAsync = jest.fn();
 
 // Lightweight React Native mock to avoid ESM parsing issues in RN entrypoint.
 jest.mock('react-native', () => {
@@ -31,10 +37,16 @@ jest.mock('react-native', () => {
       create: (styles: any) => styles,
       flatten: (styles: any) => styles,
     },
-    Alert: { alert: jest.fn() },
-    Share: { share: jest.fn() },
+    Alert: { alert: (...args: unknown[]) => mockAlert(...args) },
+    Share: { share: (...args: unknown[]) => mockShare(...args) },
   };
 });
+
+jest.mock('expo-sharing', () => ({
+  __esModule: true,
+  isAvailableAsync: (...args: unknown[]) => mockIsAvailableAsync(...args),
+  shareAsync: (...args: unknown[]) => mockShareAsync(...args),
+}));
 
 // Mock react-native-svg primitives used by the chart decorator.
 jest.mock('react-native-svg', () => {
@@ -94,6 +106,9 @@ const makeReadings = (count: number, startWeek: number): HRVReading[] =>
 describe('DataScreen inflection marker (STORY-1003)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsAvailableAsync.mockResolvedValue(true);
+    mockShareAsync.mockResolvedValue(undefined);
+    mockShare.mockResolvedValue(undefined);
     configure({
       hostComponentNames: {
         text: 'text',
@@ -160,5 +175,66 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
     render(React.createElement(DataScreen, null));
 
     expect(screen.queryByText('Inflection')).toBeNull();
+  });
+
+  it('exports a PDF report with the visible readings and shares the generated file', async () => {
+    const readings = makeReadings(6, 28);
+    const analysisResult: HRVAnalysisResult = {
+      currentTrend: 'stable',
+      inversionStatus: InversionStatus.ON_TRACK,
+      confidence: 'medium',
+      lastAnalyzedAt: new Date().toISOString(),
+      message: 'Stable trend',
+    };
+    const { exportDataAsPDF } = require('../../src/services/storage');
+    exportDataAsPDF.mockResolvedValue('file:///cache/labor-cue-report.pdf');
+
+    mockUseUser.mockReturnValue({
+      hrvReadings: readings,
+      analysisResult,
+      currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+    });
+
+    render(React.createElement(DataScreen, null));
+    fireEvent.press(screen.getByText('Export PDF Report'));
+
+    await waitFor(() => {
+      expect(exportDataAsPDF).toHaveBeenCalledWith(readings, analysisResult);
+    });
+    expect(mockShareAsync).toHaveBeenCalledWith(
+      'file:///cache/labor-cue-report.pdf',
+      expect.objectContaining({
+        mimeType: 'application/pdf',
+        dialogTitle: 'Share PDF Report',
+      })
+    );
+  });
+
+  it('falls back to the default share sheet when native PDF sharing is unavailable', async () => {
+    const readings = makeReadings(4, 30);
+    const { exportDataAsPDF } = require('../../src/services/storage');
+    exportDataAsPDF.mockResolvedValue('file:///cache/labor-cue-report.pdf');
+    mockIsAvailableAsync.mockResolvedValue(false);
+
+    mockUseUser.mockReturnValue({
+      hrvReadings: readings,
+      analysisResult: null,
+      currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+    });
+
+    render(React.createElement(DataScreen, null));
+    fireEvent.press(screen.getByText('Export PDF Report'));
+
+    await waitFor(() => {
+      expect(exportDataAsPDF).toHaveBeenCalledWith(readings, null);
+    });
+    expect(mockShareAsync).not.toHaveBeenCalled();
+    expect(mockShare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Labor Cue PDF Report',
+        message: expect.stringContaining('file:///cache/labor-cue-report.pdf'),
+        url: 'file:///cache/labor-cue-report.pdf',
+      })
+    );
   });
 });
