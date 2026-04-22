@@ -64,6 +64,7 @@ import {
   StorageKeys
 } from '../types';
 import { DATABASE_NAME, MAX_STORED_READINGS } from '../constants';
+import { DEFAULT_REMINDER_TIME } from './notifications';
 
 // ============================================================================
 // DATABASE INITIALIZATION
@@ -424,6 +425,7 @@ async function cleanupOldReadings(): Promise<void> {
  */
 const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
+  reminderTime: DEFAULT_REMINDER_TIME,
   theme: 'system',
   dataRetentionDays: 365,
   hasSeenHomeCoachMarks: false,
