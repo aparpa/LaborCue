@@ -65,6 +65,23 @@ import {
 } from '../types';
 import { DATABASE_NAME, MAX_STORED_READINGS } from '../constants';
 
+type ImportedReadingCandidate = Partial<Omit<HRVReading, 'id'>> & {
+  date?: string;
+  hrv?: number | string;
+  hrvMs?: number | string;
+  hrvValue?: number | string;
+  gestationalWeek?: number | string;
+  gestationalDay?: number | string;
+  source?: string;
+  metadata?: HRVReading['metadata'];
+};
+
+type ImportedJsonPayload = {
+  readings?: ImportedReadingCandidate[];
+};
+
+const VALID_SOURCES: HRVReading['source'][] = ['manual', 'device', 'imported'];
+
 // ============================================================================
 // DATABASE INITIALIZATION
 // ============================================================================
@@ -235,6 +252,8 @@ export async function saveHRVReading(reading: Omit<HRVReading, 'id'>): Promise<H
 export async function saveMultipleHRVReadings(
   readings: Omit<HRVReading, 'id'>[]
 ): Promise<HRVReading[]> {
+  validateImportedReadings(readings);
+
   const savedReadings: HRVReading[] = [];
   
   for (const reading of readings) {
@@ -243,6 +262,64 @@ export async function saveMultipleHRVReadings(
   }
   
   return savedReadings;
+}
+
+/**
+ * Import HRV readings from a JSON payload string.
+ * Supports either an array of readings or an object with a `readings` array.
+ */
+export async function importDataFromJSON(jsonData: string): Promise<HRVReading[]> {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(jsonData);
+  } catch (error) {
+    throw new Error('Invalid JSON import payload.');
+  }
+
+  const rawReadings = Array.isArray(parsed)
+    ? parsed
+    : isImportedJsonPayload(parsed)
+      ? parsed.readings
+      : undefined;
+
+  if (!rawReadings || rawReadings.length === 0) {
+    throw new Error('No readings found in JSON import.');
+  }
+
+  const normalizedReadings = rawReadings.map((reading, index) =>
+    normalizeImportedReading(reading, `JSON row ${index + 1}`)
+  );
+
+  return saveMultipleHRVReadings(normalizedReadings);
+}
+
+/**
+ * Import HRV readings from a CSV payload string.
+ * Expected columns include timestamp/date, HRV, gestational week/day, and optional source.
+ */
+export async function importDataFromCSV(csvData: string): Promise<HRVReading[]> {
+  const lines = csvData
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    throw new Error('CSV import must include a header row and at least one reading.');
+  }
+
+  const headerCells = parseCsvLine(lines[0]).map(normalizeCsvHeader);
+  const normalizedReadings = lines.slice(1).map((line, index) => {
+    const cells = parseCsvLine(line);
+    const readingObject = headerCells.reduce<Record<string, string>>((accumulator, header, cellIndex) => {
+      accumulator[header] = cells[cellIndex] ?? '';
+      return accumulator;
+    }, {});
+
+    return normalizeImportedReading(readingObject, `CSV row ${index + 2}`);
+  });
+
+  return saveMultipleHRVReadings(normalizedReadings);
 }
 
 /**
@@ -525,6 +602,178 @@ export async function exportDataAsCSV(): Promise<string> {
   ).join('\n');
   
   return header + rows;
+}
+
+function isImportedJsonPayload(value: unknown): value is ImportedJsonPayload {
+  return typeof value === 'object' && value !== null && 'readings' in value;
+}
+
+function normalizeImportedReading(
+  rawReading: ImportedReadingCandidate,
+  contextLabel: string
+): Omit<HRVReading, 'id'> {
+  const timestampValue = rawReading.timestamp ?? rawReading.date;
+  const hrvValueCandidate = rawReading.hrvValue ?? rawReading.hrv ?? rawReading.hrvMs;
+  const timestamp = normalizeTimestamp(timestampValue, contextLabel);
+  const hrvValue = parseFiniteNumber(hrvValueCandidate, `${contextLabel}: HRV value`);
+  const gestationalWeek = parseInteger(
+    rawReading.gestationalWeek,
+    `${contextLabel}: gestational week`
+  );
+  const gestationalDay = parseInteger(
+    rawReading.gestationalDay,
+    `${contextLabel}: gestational day`
+  );
+  const source = normalizeSource(rawReading.source);
+
+  const normalizedReading: Omit<HRVReading, 'id'> = {
+    timestamp,
+    hrvValue,
+    gestationalWeek,
+    gestationalDay,
+    source,
+  };
+
+  if (rawReading.metadata) {
+    normalizedReading.metadata = rawReading.metadata;
+  }
+
+  validateImportedReadings([normalizedReading]);
+
+  return normalizedReading;
+}
+
+function validateImportedReadings(readings: Omit<HRVReading, 'id'>[]): void {
+  readings.forEach((reading, index) => {
+    const contextLabel = `Reading ${index + 1}`;
+
+    normalizeTimestamp(reading.timestamp, `${contextLabel}: timestamp`);
+
+    if (!Number.isFinite(reading.hrvValue) || reading.hrvValue <= 0) {
+      throw new Error(`${contextLabel}: HRV value must be a positive number.`);
+    }
+
+    if (!Number.isInteger(reading.gestationalWeek) || reading.gestationalWeek < 0 || reading.gestationalWeek > 42) {
+      throw new Error(`${contextLabel}: gestational week must be an integer between 0 and 42.`);
+    }
+
+    if (!Number.isInteger(reading.gestationalDay) || reading.gestationalDay < 0 || reading.gestationalDay > 6) {
+      throw new Error(`${contextLabel}: gestational day must be an integer between 0 and 6.`);
+    }
+
+    if (!VALID_SOURCES.includes(reading.source)) {
+      throw new Error(`${contextLabel}: source must be manual, device, or imported.`);
+    }
+  });
+}
+
+function normalizeTimestamp(value: unknown, contextLabel: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${contextLabel} is required.`);
+  }
+
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error(`${contextLabel} must be a valid date.`);
+  }
+
+  return parsedDate.toISOString();
+}
+
+function parseFiniteNumber(value: unknown, contextLabel: string): number {
+  const parsedValue = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value.trim())
+      : NaN;
+
+  if (!Number.isFinite(parsedValue)) {
+    throw new Error(`${contextLabel} must be a valid number.`);
+  }
+
+  return parsedValue;
+}
+
+function parseInteger(value: unknown, contextLabel: string): number {
+  const parsedValue = parseFiniteNumber(value, contextLabel);
+
+  if (!Number.isInteger(parsedValue)) {
+    throw new Error(`${contextLabel} must be a whole number.`);
+  }
+
+  return parsedValue;
+}
+
+function normalizeSource(source: unknown): HRVReading['source'] {
+  if (typeof source !== 'string' || source.trim().length === 0) {
+    return 'imported';
+  }
+
+  const normalizedSource = source.trim().toLowerCase();
+  if (VALID_SOURCES.includes(normalizedSource as HRVReading['source'])) {
+    return normalizedSource as HRVReading['source'];
+  }
+
+  throw new Error('Source must be manual, device, or imported.');
+}
+
+function normalizeCsvHeader(header: string): string {
+  const normalized = header.trim().toLowerCase();
+
+  switch (normalized) {
+    case 'date':
+    case 'timestamp':
+      return 'timestamp';
+    case 'hrv (ms)':
+    case 'hrv':
+    case 'hrv value':
+    case 'hrv_value':
+    case 'hrvms':
+      return 'hrvValue';
+    case 'gestational week':
+    case 'gestational_week':
+      return 'gestationalWeek';
+    case 'gestational day':
+    case 'gestational_day':
+      return 'gestationalDay';
+    case 'source':
+      return 'source';
+    default:
+      return header.trim();
+  }
+}
+
+function parseCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let currentValue = '';
+  let insideQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    const nextCharacter = line[index + 1];
+
+    if (character === '"') {
+      if (insideQuotes && nextCharacter === '"') {
+        currentValue += '"';
+        index += 1;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+      continue;
+    }
+
+    if (character === ',' && !insideQuotes) {
+      values.push(currentValue.trim());
+      currentValue = '';
+      continue;
+    }
+
+    currentValue += character;
+  }
+
+  values.push(currentValue.trim());
+
+  return values;
 }
 
 // STORY-506 start: add PDF export generation here, reusing the chart

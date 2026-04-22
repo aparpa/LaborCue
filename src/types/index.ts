@@ -300,18 +300,222 @@ export interface ExportConfig {
 // characteristics, and sync payload shapes).
 
 /**
- * Placeholder for future Bluetooth device integration
+ * Bluetooth transport and pairing state for the wearable.
+ */
+export type BluetoothTransport = 'ble';
+
+export type BluetoothPermissionStatus =
+  | 'unknown'
+  | 'granted'
+  | 'denied'
+  | 'blocked';
+
+export type DeviceAvailability = 'discovered' | 'paired' | 'saved' | 'unsupported';
+
+export type ConnectionStatus =
+  | 'disconnected'
+  | 'scanning'
+  | 'connecting'
+  | 'connected'
+  | 'syncing'
+  | 'error';
+
+export type PairingStatus = 'not_paired' | 'pairing' | 'paired' | 'failed';
+
+export type GattProperty =
+  | 'read'
+  | 'write'
+  | 'writeWithoutResponse'
+  | 'notify'
+  | 'indicate'
+  | 'broadcast';
+
+export type DeviceCommandType =
+  | 'start_sync'
+  | 'stop_sync'
+  | 'request_battery'
+  | 'request_device_info'
+  | 'clear_unsynced_data';
+
+export type DeviceEventType =
+  | 'scan_started'
+  | 'device_discovered'
+  | 'connection_changed'
+  | 'sync_started'
+  | 'sync_progress'
+  | 'sync_completed'
+  | 'sync_failed'
+  | 'battery_updated';
+
+export type SyncFailureReason =
+  | 'bluetooth_off'
+  | 'permission_denied'
+  | 'device_unreachable'
+  | 'service_not_found'
+  | 'characteristic_not_found'
+  | 'invalid_payload'
+  | 'timeout'
+  | 'unknown';
+
+/**
+ * A Bluetooth scan result with metadata useful for sorting nearby devices.
+ */
+export interface BLEAdvertisementData {
+  localName?: string;
+  manufacturerData?: string;
+  serviceData?: Record<string, string>;
+  serviceUuids?: string[];
+  txPowerLevel?: number;
+  isConnectable?: boolean;
+  rawDataBase64?: string;
+}
+
+/**
+ * Represents a device discovered during BLE scanning.
+ */
+export interface DiscoveredDevice {
+  id: string;
+  name?: string;
+  localName?: string;
+  transport: BluetoothTransport;
+  rssi?: number;
+  availability: DeviceAvailability;
+  advertisementData?: BLEAdvertisementData;
+  lastSeenAt: string;
+}
+
+/**
+ * Describes a BLE GATT characteristic we can interact with.
+ */
+export interface BLECharacteristic {
+  uuid: string;
+  name?: string;
+  properties: GattProperty[];
+  serviceUuid: string;
+  descriptors?: string[];
+}
+
+/**
+ * Describes a BLE GATT service and its exposed characteristics.
+ */
+export interface BLEService {
+  uuid: string;
+  name?: string;
+  isPrimary: boolean;
+  characteristics: BLECharacteristic[];
+}
+
+/**
+ * Persisted information about the user's wearable device.
  */
 export interface DeviceInfo {
   id: string;
   name: string;
+  model?: string;
+  transport?: BluetoothTransport;
   connected: boolean;
+  connectionStatus?: ConnectionStatus;
+  pairingStatus?: PairingStatus;
+  availability?: DeviceAvailability;
+  deviceIdentifier?: string;
+  hardwareRevision?: string;
   batteryLevel?: number;
   lastSync?: string;
   firmwareVersion?: string;
+  serialNumber?: string;
+  manufacturer?: string;
+  services?: BLEService[];
 }
 
 /**
- * Device connection status
+ * Saved pairing configuration for reconnecting to a known wearable.
  */
-export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
+export interface DevicePairingRecord {
+  deviceId: string;
+  pairedAt: string;
+  nickname?: string;
+  lastConnectedAt?: string;
+  autoReconnectEnabled: boolean;
+}
+
+/**
+ * The app's Bluetooth runtime state.
+ */
+export interface BluetoothState {
+  isAvailable: boolean;
+  isEnabled: boolean;
+  permissionStatus: BluetoothPermissionStatus;
+  connectionStatus: ConnectionStatus;
+  activeDeviceId?: string;
+  lastError?: string;
+}
+
+/**
+ * Device-to-app command envelope.
+ */
+export interface DeviceCommand {
+  id: string;
+  type: DeviceCommandType;
+  createdAt: string;
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * Result from sending a command to the wearable.
+ */
+export interface DeviceCommandResult {
+  commandId: string;
+  success: boolean;
+  respondedAt: string;
+  errorMessage?: string;
+}
+
+/**
+ * HRV record received from the wearable before persistence.
+ */
+export interface DeviceHRVSample {
+  timestamp: string;
+  hrvValue: number;
+  sleepDuration?: number;
+  sleepQuality?: number;
+  notes?: string;
+  deviceId: string;
+  signalQuality?: number;
+}
+
+/**
+ * Metadata describing a sync session with the wearable.
+ */
+export interface DeviceSyncSession {
+  sessionId: string;
+  deviceId: string;
+  startedAt: string;
+  completedAt?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  readingsReceived: number;
+  failureReason?: SyncFailureReason;
+  errorMessage?: string;
+}
+
+/**
+ * Payload returned by the wearable during an HRV sync.
+ */
+export interface DeviceSyncPayload {
+  device: Pick<DeviceInfo, 'id' | 'name' | 'firmwareVersion' | 'batteryLevel'>;
+  readings: DeviceHRVSample[];
+  syncedAt: string;
+  hasMore: boolean;
+  cursor?: string;
+}
+
+/**
+ * Runtime events emitted by Bluetooth or sync workflows.
+ */
+export interface DeviceEvent {
+  id: string;
+  type: DeviceEventType;
+  deviceId?: string;
+  occurredAt: string;
+  message?: string;
+  payload?: Record<string, unknown>;
+}
