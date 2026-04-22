@@ -78,6 +78,7 @@ import {
   Dimensions,
   Alert,
   Share,
+  LayoutChangeEvent,
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import {
@@ -106,6 +107,10 @@ import type { HRVReading, HRVAnalysisResult } from '../types';
 const screenWidth = Dimensions.get('window').width;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
+const CHART_HEIGHT = 220;
+const TOOLTIP_GAP = 12;
+const TOOLTIP_EDGE_PADDING = SPACING.sm;
+const FALLBACK_TOOLTIP_HEIGHT = 168;
 const SHARE_CHART_WIDTH = 1200;
 const SHARE_CHART_HEIGHT = 720;
 
@@ -141,13 +146,26 @@ function getSharingApi(): SharingModule {
   return module.shareAsync ? module : (module.default ?? {});
 }
 
+type SelectedChartPoint = {
+  reading: HRVReading;
+  x: number;
+  y: number;
+};
+
+type ChartPointPress = {
+  index: number;
+  x?: number;
+  y?: number;
+};
+
 export default function DataScreen(): JSX.Element {
   const { hrvReadings, analysisResult, currentGestationalWeek } = useUser();
-  const [selectedPoint, setSelectedPoint] = useState<HRVReading | null>(null);
+  const [selectedPoint, setSelectedPoint] = useState<SelectedChartPoint | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState(0);
   const [chartWidth, setChartWidth] = useState(screenWidth - SPACING.lg * 2);
+  const [tooltipHeight, setTooltipHeight] = useState(FALLBACK_TOOLTIP_HEIGHT);
   // STORY-1004 start: add date range filter state here.
   // STORY-1006 start: add annotation draft state here.
   
@@ -167,11 +185,36 @@ export default function DataScreen(): JSX.Element {
   const inflectionPoint = getInflectionPoint(analysisResult, visibleReadings);
   
   // Handle data point selection
-  const handleDataPointClick = useCallback((data: { index: number }) => {
-    if (visibleReadings[data.index]) {
-      setSelectedPoint(visibleReadings[data.index]);
+  const tooltipWidth = Math.min(Math.max(chartWidth - SPACING.lg, 0), 260);
+  const tooltipPosition = useMemo(() => {
+    if (!selectedPoint) {
+      return null;
     }
-  }, [visibleReadings]);
+
+    return getTooltipPosition({
+      anchorX: selectedPoint.x,
+      anchorY: selectedPoint.y,
+      chartWidth,
+      chartHeight: CHART_HEIGHT,
+      tooltipWidth,
+      tooltipHeight,
+      gap: TOOLTIP_GAP,
+      edgePadding: TOOLTIP_EDGE_PADDING,
+    });
+  }, [chartWidth, selectedPoint, tooltipHeight, tooltipWidth]);
+
+  const handleDataPointClick = useCallback((data: ChartPointPress) => {
+    const reading = visibleReadings[data.index];
+    if (!reading) {
+      return;
+    }
+
+    setSelectedPoint({
+      reading,
+      x: typeof data.x === 'number' ? data.x : chartWidth / 2,
+      y: typeof data.y === 'number' ? data.y : CHART_HEIGHT - TOOLTIP_GAP,
+    });
+  }, [chartWidth, visibleReadings]);
   
   // Handle export
   const handleExport = useCallback(async (format: 'csv' | 'json') => {
@@ -226,6 +269,7 @@ export default function DataScreen(): JSX.Element {
   const handlePinchStateChange = useCallback((event: PinchGestureHandlerStateChangeEvent) => {
     if (event.nativeEvent.state !== GestureState.END) return;
     const scale = event.nativeEvent.scale || 1;
+    setSelectedPoint(null);
     setZoomLevel((prev) => clamp(prev * scale, MIN_ZOOM, MAX_ZOOM));
     setPanOffset((prev) =>
       clampPanOffset(prev, hrvReadings.length, getWindowSize(hrvReadings.length, zoomLevel * scale))
@@ -235,12 +279,21 @@ export default function DataScreen(): JSX.Element {
   const handlePanStateChange = useCallback((event: PanGestureHandlerStateChangeEvent) => {
     if (event.nativeEvent.state !== GestureState.END) return;
     const translationX = event.nativeEvent.translationX || 0;
+    setSelectedPoint(null);
     setPanOffset((prev) =>
       getPanOffsetFromTranslation(translationX, chartWidth, windowSize, prev, hrvReadings.length)
     );
   }, [chartWidth, windowSize, hrvReadings.length]);
 
+  const handleTooltipLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = event.nativeEvent.layout.height;
+    if (Math.abs(nextHeight - tooltipHeight) > 1) {
+      setTooltipHeight(nextHeight);
+    }
+  }, [tooltipHeight]);
+
   const resetZoom = useCallback(() => {
+    setSelectedPoint(null);
     setZoomLevel(1);
     setPanOffset(0);
   }, []);
@@ -281,16 +334,16 @@ export default function DataScreen(): JSX.Element {
         
         <View
           style={styles.chartContainer}
-          onLayout={(event) => setChartWidth(event.nativeEvent.layout.width)}
+          onLayout={(event) => setChartWidth(Math.max(event.nativeEvent.layout.width - SPACING.sm * 2, 0))}
         >
           {/* STORY-1001 start: enable pinch-to-zoom/pan on this chart container. */}
           <PinchGestureHandler onHandlerStateChange={handlePinchStateChange}>
             <PanGestureHandler onHandlerStateChange={handlePanStateChange}>
-              <View>
+              <View style={[styles.chartFrame, { width: chartWidth, height: CHART_HEIGHT }]}>
                 <LineChart
                   data={chartData}
                   width={chartWidth}
-                  height={220}
+                  height={CHART_HEIGHT}
                   chartConfig={{
                     ...CHART_CONFIG,
                     decimalPlaces: 0,
@@ -351,6 +404,54 @@ export default function DataScreen(): JSX.Element {
                     );
                   }}
                 />
+                {selectedPoint && tooltipPosition && (
+                  <View
+                    onLayout={handleTooltipLayout}
+                    style={[
+                      styles.tooltipCard,
+                      styles.tooltipCardFloating,
+                      {
+                        width: tooltipWidth,
+                        left: tooltipPosition.left,
+                        top: tooltipPosition.top,
+                      },
+                    ]}
+                  >
+                    <View style={styles.tooltipHeader}>
+                      <Text style={styles.tooltipTitle}>Reading Details</Text>
+                      <TouchableOpacity onPress={() => setSelectedPoint(null)}>
+                        <Text style={styles.tooltipClose}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.tooltipContent}>
+                      <View style={styles.tooltipRow}>
+                        <Text style={styles.tooltipLabel}>Date:</Text>
+                        <Text style={styles.tooltipValue}>
+                          {formatDate(selectedPoint.reading.timestamp, 'MMMM d, yyyy h:mm a')}
+                        </Text>
+                      </View>
+                      <View style={styles.tooltipRow}>
+                        <Text style={styles.tooltipLabel}>HRV:</Text>
+                        <Text style={styles.tooltipValue}>
+                          {selectedPoint.reading.hrvValue.toFixed(1)} ms
+                        </Text>
+                      </View>
+                      <View style={styles.tooltipRow}>
+                        <Text style={styles.tooltipLabel}>Gestational Week:</Text>
+                        <Text style={styles.tooltipValue}>
+                          Week {selectedPoint.reading.gestationalWeek}, Day {selectedPoint.reading.gestationalDay}
+                        </Text>
+                      </View>
+                      <View style={styles.tooltipRow}>
+                        <Text style={styles.tooltipLabel}>Source:</Text>
+                        <Text style={styles.tooltipValue}>
+                          {selectedPoint.reading.source.charAt(0).toUpperCase() + selectedPoint.reading.source.slice(1)}
+                        </Text>
+                      </View>
+                    </View>
+                    {/* STORY-1006 start: add annotation editor for this data point here. */}
+                  </View>
+                )}
               </View>
             </PanGestureHandler>
           </PinchGestureHandler>
@@ -358,46 +459,6 @@ export default function DataScreen(): JSX.Element {
           {/* STORY-1003 start: mark the inflection point on the chart here. */}
           {/* STORY-1005 start: overlay expected vs actual comparison line here. */}
         </View>
-        
-        {/* Selected Point Details */}
-        {selectedPoint && (
-          <View style={styles.tooltipCard}>
-            {/* STORY-1008 start: reposition tooltip near the selected point. */}
-            <View style={styles.tooltipHeader}>
-              <Text style={styles.tooltipTitle}>Reading Details</Text>
-              <TouchableOpacity onPress={() => setSelectedPoint(null)}>
-                <Text style={styles.tooltipClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.tooltipContent}>
-              <View style={styles.tooltipRow}>
-                <Text style={styles.tooltipLabel}>Date:</Text>
-                <Text style={styles.tooltipValue}>
-                  {formatDate(selectedPoint.timestamp, 'MMMM d, yyyy h:mm a')}
-                </Text>
-              </View>
-              <View style={styles.tooltipRow}>
-                <Text style={styles.tooltipLabel}>HRV:</Text>
-                <Text style={styles.tooltipValue}>
-                  {selectedPoint.hrvValue.toFixed(1)} ms
-                </Text>
-              </View>
-              <View style={styles.tooltipRow}>
-                <Text style={styles.tooltipLabel}>Gestational Week:</Text>
-                <Text style={styles.tooltipValue}>
-                  Week {selectedPoint.gestationalWeek}, Day {selectedPoint.gestationalDay}
-                </Text>
-              </View>
-              <View style={styles.tooltipRow}>
-                <Text style={styles.tooltipLabel}>Source:</Text>
-                <Text style={styles.tooltipValue}>
-                  {selectedPoint.source.charAt(0).toUpperCase() + selectedPoint.source.slice(1)}
-                </Text>
-              </View>
-            </View>
-            {/* STORY-1006 start: add annotation editor for this data point here. */}
-          </View>
-        )}
       </View>
       
       {/* Weekly Averages Table */}
@@ -666,6 +727,40 @@ async function writeChartSvgToCache(svg: string): Promise<string> {
   return uri;
 }
 
+function getTooltipPosition({
+  anchorX,
+  anchorY,
+  chartWidth,
+  chartHeight,
+  tooltipWidth,
+  tooltipHeight,
+  gap,
+  edgePadding,
+}: {
+  anchorX: number;
+  anchorY: number;
+  chartWidth: number;
+  chartHeight: number;
+  tooltipWidth: number;
+  tooltipHeight: number;
+  gap: number;
+  edgePadding: number;
+}) {
+  const boundedAnchorX = clamp(anchorX, edgePadding, chartWidth - edgePadding);
+  const boundedAnchorY = clamp(anchorY, edgePadding, chartHeight - edgePadding);
+  const maxLeft = Math.max(edgePadding, chartWidth - tooltipWidth - edgePadding);
+  const left = clamp(boundedAnchorX - tooltipWidth / 2, edgePadding, maxLeft);
+
+  const preferredTop = boundedAnchorY - tooltipHeight - gap;
+  const fallbackTop = boundedAnchorY + gap;
+  const maxTop = Math.max(edgePadding, chartHeight - tooltipHeight - edgePadding);
+  const top = preferredTop >= edgePadding
+    ? preferredTop
+    : clamp(fallbackTop, edgePadding, maxTop);
+
+  return { left, top };
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -740,17 +835,32 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.lg,
     padding: SPACING.sm,
     alignItems: 'center',
+    overflow: 'visible',
+  },
+  chartFrame: {
+    position: 'relative',
   },
   chart: {
     borderRadius: BORDER_RADIUS.md,
   },
   tooltipCard: {
-    marginTop: SPACING.lg,
     backgroundColor: COLORS.backgroundSecondary,
     borderRadius: BORDER_RADIUS.md,
     padding: SPACING.lg,
     borderLeftWidth: 4,
     borderLeftColor: COLORS.primary,
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    elevation: 5,
+  },
+  tooltipCardFloating: {
+    position: 'absolute',
+    zIndex: 2,
   },
   tooltipHeader: {
     flexDirection: 'row',
@@ -782,6 +892,8 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: COLORS.textPrimary,
     fontWeight: '500',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   table: {
     backgroundColor: COLORS.backgroundSecondary,
