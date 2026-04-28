@@ -86,7 +86,7 @@ import { formatDate, formatGestationalAge } from '../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants';
 import type { HRVReading } from '../types';
 
-export default function SettingsScreen(): JSX.Element {
+export default function SettingsScreen(): React.JSX.Element {
   const {
     profile,
     setProfile,

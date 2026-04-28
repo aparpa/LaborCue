@@ -104,7 +104,7 @@ const SETUP_STEPS = [
   },
 ] as const;
 
-export default function SetupScreen(): JSX.Element {
+export default function SetupScreen(): React.JSX.Element {
   const [currentStep, setCurrentStep] = useState<SetupStep>(0);
   const [name, setName] = useState('');
   const [setupMethod, setSetupMethod] = useState<SetupMethod>('weeks');

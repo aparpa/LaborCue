@@ -149,7 +149,7 @@ interface UserProviderProps {
 /**
  * UserProvider component that wraps the app and provides global state
  */
-export function UserProvider({ children }: UserProviderProps): JSX.Element {
+export function UserProvider({ children }: UserProviderProps): React.JSX.Element {
   // State
   const [profile, setProfileState] = useState<UserProfile | null>(null);
   const [isFirstLaunch, setIsFirstLaunch] = useState(true);
@@ -193,10 +193,11 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
     
     return hoursSince(new Date(latestReading.timestamp).getTime()) >= HOURS_WITHOUT_READING_FOR_WARNING;
   }, [HOURS_WITHOUT_READING_FOR_WARNING, isFirstLaunch, isLoading, latestReading, profile]);
-  
-  useEffect(() => {
-    setErrorMessage(shouldWarnForMissingReadings() ? NO_DATA_WARNING_MESSAGE : null);
-  }, [NO_DATA_WARNING_MESSAGE, shouldWarnForMissingReadings]);
+
+  const warningMessage = shouldWarnForMissingReadings()
+    ? NO_DATA_WARNING_MESSAGE
+    : null;
+  const visibleErrorMessage = errorMessage ?? warningMessage;
   
   // ============================================================================
   // INITIALIZATION
@@ -339,7 +340,7 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
   }, []);
   
   const analysisResultWithError = useMemo<HRVAnalysisResult | null>(() => {
-    if (errorMessage) {
+    if (visibleErrorMessage) {
       const baseResult = analysisResult ?? {
         currentTrend: 'insufficient_data' as const,
         inversionStatus: InversionStatus.INSUFFICIENT_DATA,
@@ -358,7 +359,7 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
     }
     
     return analysisResult;
-  }, [NO_DATA_WARNING_MESSAGE, analysisResult, errorMessage]);
+  }, [NO_DATA_WARNING_MESSAGE, analysisResult, visibleErrorMessage]);
   
   // ============================================================================
   // CONTEXT VALUE
@@ -377,7 +378,7 @@ export function UserProvider({ children }: UserProviderProps): JSX.Element {
     completeSetup,
     currentGestationalWeek,
     currentGestationalDay,
-    errorMessage
+    errorMessage: visibleErrorMessage
   };
   
   return (

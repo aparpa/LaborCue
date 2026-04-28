@@ -83,7 +83,7 @@ export default function TrendIndicator({
   timestamps,
   size = "medium",
   layout = "default",
-}: TrendIndicatorProps): JSX.Element {
+}: TrendIndicatorProps): React.JSX.Element {
   const trendAnimation = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {

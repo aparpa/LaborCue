@@ -149,7 +149,7 @@ function buildSparklinePoints(readings: HRVReading[]): {
   };
 }
 
-export default function HomeScreen(): JSX.Element {
+export default function HomeScreen(): React.JSX.Element {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const {
     profile,

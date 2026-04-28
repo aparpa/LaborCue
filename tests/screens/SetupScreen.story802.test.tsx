@@ -4,7 +4,7 @@ import { Alert, StyleSheet } from 'react-native';
 import SetupScreen from '../../src/screens/SetupScreen';
 import { COLORS } from '../../src/constants';
 
-jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');
+jest.mock('react-native/src/private/animated/NativeAnimatedHelper');
 
 type ScreenRender = ReturnType<typeof render>;
 

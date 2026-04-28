@@ -7,7 +7,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-var-requires */
 
 import React from 'react';
-import { render, screen, configure, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
+import renderer from 'react-test-renderer';
 import DataScreen, { __testables } from '../../src/screens/DataScreen';
 import type { HRVAnalysisResult, HRVReading } from '../../src/types';
 import { InversionStatus } from '../../src/types';
@@ -111,22 +112,20 @@ const makeReadings = (count: number, startWeek: number): HRVReading[] =>
   }));
 
 describe('DataScreen inflection marker (STORY-1003)', () => {
+  function renderDataScreen(): renderer.ReactTestRenderer {
+    let tree: renderer.ReactTestRenderer;
+    renderer.act(() => {
+      tree = renderer.create(React.createElement(DataScreen, null));
+    });
+    return tree!;
+  }
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsAvailableAsync.mockResolvedValue(true);
     mockWriteAsStringAsync.mockResolvedValue(undefined);
     mockShareAsync.mockResolvedValue(undefined);
     mockShare.mockResolvedValue(undefined);
-    configure({
-      hostComponentNames: {
-        text: 'text',
-        textInput: 'textinput',
-        image: 'image',
-        switch: 'switch',
-        scrollView: 'scrollview',
-        modal: 'modal',
-      },
-    });
   });
 
   it('renders the inflection marker when inversion is within the displayed readings', () => {
@@ -151,9 +150,9 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
       currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
     });
 
-    render(React.createElement(DataScreen, null));
+    const tree = renderDataScreen();
 
-    const markerLabels = screen.UNSAFE_getAllByType(SvgText);
+    const markerLabels = tree.root.findAllByType(SvgText);
     const textContent = markerLabels
       .map((n) =>
         Array.isArray(n.props.children)
@@ -180,9 +179,9 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
       currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
     });
 
-    render(React.createElement(DataScreen, null));
+    const tree = renderDataScreen();
 
-    expect(screen.queryByText('Inflection')).toBeNull();
+    expect(JSON.stringify(tree.toJSON())).not.toContain('Inflection');
   });
 
   it('creates an SVG chart image and shares it when tapping Share Chart Image', async () => {

@@ -141,7 +141,7 @@ function getSharingApi(): SharingModule {
   return module.shareAsync ? module : (module.default ?? {});
 }
 
-export default function DataScreen(): JSX.Element {
+export default function DataScreen(): React.JSX.Element {
   const { hrvReadings, analysisResult, currentGestationalWeek } = useUser();
   const [selectedPoint, setSelectedPoint] = useState<HRVReading | null>(null);
   const [isExporting, setIsExporting] = useState(false);

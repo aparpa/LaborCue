@@ -24,7 +24,7 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('../../src/components/StatusCard', () => {
   const React = require('react');
-  return function MockStatusCard(): JSX.Element {
+  return function MockStatusCard(): React.JSX.Element {
     return React.createElement('text', null, 'Status Card');
   };
 });
@@ -33,7 +33,7 @@ const mockTrendIndicator = jest.fn();
 
 jest.mock('../../src/components/TrendIndicator', () => {
   const React = require('react');
-  return function MockTrendIndicator(props: Record<string, unknown>): JSX.Element {
+  return function MockTrendIndicator(props: Record<string, unknown>): React.JSX.Element {
     mockTrendIndicator(props);
     return React.createElement('text', null, 'Trend Indicator');
   };

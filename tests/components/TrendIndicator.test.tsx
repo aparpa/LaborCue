@@ -40,8 +40,11 @@ jest.mock("react-native", () => {
 import TrendIndicator from "../../src/components/TrendIndicator";
 
 function renderAsString(props: React.ComponentProps<typeof TrendIndicator>): string {
-  const tree = renderer.create(React.createElement(TrendIndicator, props)).toJSON();
-  return JSON.stringify(tree);
+  let tree: renderer.ReactTestRenderer;
+  renderer.act(() => {
+    tree = renderer.create(React.createElement(TrendIndicator, props));
+  });
+  return JSON.stringify(tree!.toJSON());
 }
 
 function flattenStyle(styleProp: unknown): Record<string, unknown> {
@@ -58,7 +61,11 @@ function flattenStyle(styleProp: unknown): Record<string, unknown> {
 }
 
 function renderTree(props: React.ComponentProps<typeof TrendIndicator>) {
-  return renderer.create(React.createElement(TrendIndicator, props));
+  let tree: renderer.ReactTestRenderer;
+  renderer.act(() => {
+    tree = renderer.create(React.createElement(TrendIndicator, props));
+  });
+  return tree!;
 }
 
 describe("TrendIndicator (STORY-1302)", () => {

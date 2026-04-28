@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react-nativ
 import { StyleSheet } from 'react-native';
 import SetupScreen from '../../src/screens/SetupScreen';
 
-jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');
+jest.mock('react-native/src/private/animated/NativeAnimatedHelper');
 
 const mockSetProfile = jest.fn();
 const mockCompleteSetup = jest.fn();
@@ -25,7 +25,7 @@ jest.mock('../../src/context/UserContext', () => ({
 }));
 
 jest.mock('../../src/services/storage', () => ({
-  createNewProfile: (...args: unknown[]) => mockCreateNewProfile(...args),
+  createNewProfile: mockCreateNewProfile,
 }));
 
 jest.mock('../../src/utils/dateUtils', () => ({

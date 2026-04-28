@@ -198,7 +198,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps): JSX.Element {
 /**
  * Main drawer navigation with Home, Data, and Settings screens
  */
-function MainDrawerNavigator(): JSX.Element {
+function MainDrawerNavigator(): React.JSX.Element {
   return (
     <Drawer.Navigator
       initialRouteName="Home"
@@ -347,7 +347,7 @@ function OnboardingCarousel({ onComplete }: OnboardingCarouselProps): JSX.Elemen
 /**
  * Loading screen shown during app initialization
  */
-function LoadingScreen(): JSX.Element {
+function LoadingScreen(): React.JSX.Element {
   return (
     <View style={styles.loadingContainer}>
       <ActivityIndicator size="large" color={COLORS.primary} />
@@ -358,7 +358,7 @@ function LoadingScreen(): JSX.Element {
 /**
  * Root navigator that handles first launch vs returning user
  */
-function RootNavigator(): JSX.Element {
+function RootNavigator(): React.JSX.Element {
   const { isLoading, isFirstLaunch } = useUser();
   const [shouldShowOnboarding, setShouldShowOnboarding] = useState(false);
   const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(false);
@@ -462,7 +462,7 @@ function RootNavigator(): JSX.Element {
  * Main navigation component to be used in App.tsx
  * Wraps everything in NavigationContainer
  */
-export default function AppNavigator(): JSX.Element {
+export default function AppNavigator(): React.JSX.Element {
   return (
     <NavigationContainer>
       <RootNavigator />

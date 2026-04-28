@@ -46,7 +46,7 @@ export default function StatusCard({
   message,
   recommendation,
   confidence,
-}: StatusCardProps): JSX.Element {
+}: StatusCardProps): React.JSX.Element {
   const colors = STATUS_COLORS[inversionStatus];
   const pulseAnimation = React.useRef(new Animated.Value(0)).current;
   const isUrgentStatus = inversionStatus === InversionStatus.PROBABLE_INVERSION;
