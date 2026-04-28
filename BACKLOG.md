@@ -126,7 +126,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-701 | Deep linking support | 3 | Low | `AppNavigator.tsx` | |
 | STORY-1204 | Status history timeline | 3 | Low | `StatusCard.tsx` | |
 | STORY-603 | Undo functionality for deletions | 3 | Low | `UserContext.tsx` | |
-| STORY-1109 | Manual HRV entry form | 3 | Medium | `SettingsScreen.tsx` | |
+| STORY-1109 | Manual HRV entry form | 3 | Medium | `SettingsScreen.tsx` |Sydney |
 
 ---
 
