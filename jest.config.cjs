@@ -8,6 +8,7 @@ module.exports = {
   testMatch: [
     "**/__tests__/**/*.(spec|test).[jt]s?(x)",
     "**/?(*.)+(spec|test).[tj]s?(x)",
+    "**/?(*.)+(test[0-9][0-9][0-9]).[tj]s?(x)",
   ],
   transform: {
     "^.+\\.(js|jsx|ts|tsx)$": "babel-jest",
