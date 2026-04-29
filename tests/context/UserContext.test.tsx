@@ -114,7 +114,7 @@ describe('UserContext optimistic addHRVReading (STORY-602)', () => {
     });
 
     let addPromise: Promise<void>;
-    await act(async () => {
+    act(() => {
       addPromise = getCtx().addHRVReading(readingInput);
     });
 
@@ -154,5 +154,30 @@ describe('UserContext optimistic addHRVReading (STORY-602)', () => {
     // State rolled back
     expect(getCtx().hrvReadings).toHaveLength(0);
     expect(getCtx().errorMessage).toBeTruthy();
+  });
+
+  it('refreshData reloads profile state after data is cleared', async () => {
+    const getCtx = renderWithConsumer();
+
+    await act(async () => {});
+
+    expect(getCtx().profile?.id).toBe(profile.id);
+
+    const loadUserProfileMock = jest.mocked(storage.loadUserProfile);
+    const getAllHRVReadingsMock = jest.mocked(storage.getAllHRVReadings);
+    const isFirstLaunchMock = jest.mocked(storage.isFirstLaunch);
+
+    loadUserProfileMock.mockResolvedValueOnce(null);
+    getAllHRVReadingsMock.mockResolvedValueOnce([]);
+    isFirstLaunchMock.mockResolvedValueOnce(true);
+
+    await act(async () => {
+      await getCtx().refreshData();
+    });
+
+    expect(getCtx().profile).toBeNull();
+    expect(getCtx().hrvReadings).toEqual([]);
+    expect(getCtx().analysisResult).toBeNull();
+    expect(getCtx().isFirstLaunch).toBe(true);
   });
 });

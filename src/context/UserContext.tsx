@@ -320,17 +320,25 @@ export function UserProvider({ children }: UserProviderProps): React.JSX.Element
    */
   const refreshData = useCallback(async (): Promise<void> => {
     try {
+      const firstLaunch = await checkFirstLaunch();
+      const savedProfile = await loadUserProfile();
       const savedReadings = await getAllHRVReadings();
+
+      setIsFirstLaunch(firstLaunch);
+      setProfileState(savedProfile);
       setHrvReadings(savedReadings);
-      
-      if (profile && savedReadings.length > 0) {
-        const result = analyzeHRV(savedReadings, profile.estimatedDueDate);
-        setAnalysisResult(result);
+
+      if (savedProfile && savedReadings.length > 0) {
+        setAnalysisResult(analyzeHRV(savedReadings, savedProfile.estimatedDueDate));
+      } else {
+        setAnalysisResult(null);
       }
+
+      setErrorMessage(null);
     } catch (error) {
       console.error('Failed to refresh data:', error);
     }
-  }, [profile]);
+  }, []);
   
   /**
    * Mark setup as complete (for first launch flow)
