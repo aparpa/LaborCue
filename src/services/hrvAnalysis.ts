@@ -79,6 +79,7 @@ import {
   FULL_TERM_WEEKS
 } from '../constants';
 import { addWeeks, parseISO } from 'date-fns';
+import * as ss from 'simple-statistics';
 
 // Internal tuning constants for trend/inversion detection
 const SMOOTHING_WINDOW_POINTS = 3;
@@ -87,11 +88,34 @@ const INVERSION_RECENT_WINDOW_POINTS = 14;       // window to check for positive
 const INVERSION_PERSISTENCE_POINTS = 7;          // require ~2 weeks of positive run (assuming q2n)
 const MIN_R2_FOR_TREND = 0.15;
 const MIN_NORMALIZED_SLOPE = 0.003;              // ~0.3% change per point
+const MIN_WEEKS_FOR_SPLINE_MODEL = 6;
+const MIN_WEEKS_PER_SPLINE_SIDE = 2;
+const MIN_SPLINE_R2 = 0.2;
+const MIN_SPLINE_R2_IMPROVEMENT = 0.03;
 
 interface SmoothedPoint {
   value: number;
   timestamp: string;
   gestationalWeek: number;
+}
+
+interface WeeklySplinePoint {
+  gestationalWeek: number;
+  averageHRV: number;
+  readingCount: number;
+}
+
+interface LinearFit {
+  intercept: number;
+  slope: number;
+  r2: number;
+}
+
+interface SplineFit extends LinearFit {
+  knotWeek: number;
+  hingeSlopeDelta: number;
+  postKnotSlope: number;
+  fittedValues: number[];
 }
 
 // STORY-405 start: add Jest tests in a new `src/services/__tests__/hrvAnalysis.test.ts`
@@ -138,7 +162,7 @@ export function analyzeHRV(
   const currentTrend = detectCurrentTrend(smoothedReadings);
   
   // Detect if an inversion has occurred
-  const inversionResult = detectInversion(sortedReadings, smoothedReadings);
+  const inversionResult = detectInversion(sortedReadings);
   
   // Determine the status based on inversion timing
   const status = determineStatus(inversionResult);
@@ -247,10 +271,7 @@ interface InversionDetectionResult {
  */
 // STORY-406 start: replace this inversion logic with the spline/mixed-effect
 // model from the paper, keeping the returned shape compatible.
-function detectInversion(
-  readings: HRVReading[],
-  smoothedReadings: SmoothedPoint[]
-): InversionDetectionResult {
+function detectInversion(readings: HRVReading[]): InversionDetectionResult {
   const noInversion: InversionDetectionResult = {
     inversionDetected: false,
     inversionWeek: null,
@@ -258,54 +279,68 @@ function detectInversion(
     trendBeforeInversion: null,
     trendAfterInversion: null
   };
-  
-  if (smoothedReadings.length < MINIMUM_DATA_POINTS_FOR_INVERSION) {
+
+  if (readings.length < MINIMUM_DATA_POINTS_FOR_INVERSION) {
     return noInversion;
   }
-  
-  const longTermRegression = computeRegression(smoothedReadings);
-  const recentWindow = smoothedReadings.slice(-INVERSION_RECENT_WINDOW_POINTS);
-  const recentRegression = computeRegression(recentWindow);
-  
-  const longTermTrend = slopeToTrend(longTermRegression.slope, longTermRegression.r2, smoothedReadings);
-  const recentTrend = slopeToTrend(recentRegression.slope, recentRegression.r2, recentWindow);
-  
-  const recentPositiveRun = getPositiveRunLength(smoothedReadings);
-  const hasPersistentPositiveRun = recentPositiveRun >= INVERSION_PERSISTENCE_POINTS - 1;
-  
-  const longTermMean = computeMean(smoothedReadings.map(p => p.value));
-  const recentMean = computeMean(recentWindow.map(p => p.value));
-  const longTermNormalizedSlope = normalizeSlope(longTermRegression.slope, longTermMean);
-  const recentNormalizedSlope = normalizeSlope(recentRegression.slope, recentMean);
-  
+
+  const weeklyPoints = calculateWeeklyAverages(readings).map((aggregate) => ({
+    gestationalWeek: aggregate.gestationalWeek,
+    averageHRV: aggregate.averageHRV,
+    readingCount: aggregate.readingCount,
+  }));
+
+  if (weeklyPoints.length < MIN_WEEKS_FOR_SPLINE_MODEL) {
+    return noInversion;
+  }
+
+  const baselineFit = fitLinearTrend(weeklyPoints);
+  const splineFit = findBestSplineFit(weeklyPoints);
+
+  if (!splineFit) {
+    return noInversion;
+  }
+
+  const meanHRV = ss.mean(weeklyPoints.map((point) => point.averageHRV));
+  const weeklyStdDev =
+    weeklyPoints.length > 1
+      ? ss.sampleStandardDeviation(weeklyPoints.map((point) => point.averageHRV))
+      : 0;
+  const normalizedPreSlope = normalizeSlope(splineFit.slope, meanHRV);
+  const normalizedPostSlope = normalizeSlope(splineFit.postKnotSlope, meanHRV);
+  const r2Improvement = splineFit.r2 - baselineFit.r2;
+  const slopeContrast =
+    weeklyStdDev === 0
+      ? Math.abs(splineFit.postKnotSlope - splineFit.slope)
+      : Math.abs(splineFit.postKnotSlope - splineFit.slope) / weeklyStdDev;
+  const postKnotSupport = weeklyPoints.filter(
+    (point) => point.gestationalWeek >= splineFit.knotWeek
+  ).length;
+
   const looksLikeInversion =
-    longTermTrend === 'decreasing' &&
-    recentTrend === 'increasing' &&
-    recentNormalizedSlope > MIN_NORMALIZED_SLOPE &&
-    longTermNormalizedSlope < -MIN_NORMALIZED_SLOPE &&
-    hasPersistentPositiveRun;
-  
+    normalizedPreSlope < -MIN_NORMALIZED_SLOPE &&
+    normalizedPostSlope > MIN_NORMALIZED_SLOPE &&
+    splineFit.r2 >= MIN_SPLINE_R2 &&
+    r2Improvement >= MIN_SPLINE_R2_IMPROVEMENT &&
+    postKnotSupport >= MIN_WEEKS_PER_SPLINE_SIDE;
+
   if (!looksLikeInversion) {
     return noInversion;
   }
-  
-  const inversionStartIndex = smoothedReadings.length - (INVERSION_PERSISTENCE_POINTS - 1);
-  const inversionWeek =
-    readings[inversionStartIndex]?.gestationalWeek ??
-    smoothedReadings[inversionStartIndex - 1]?.gestationalWeek ??
-    null;
-  
+
   const confidence = clamp01(
-    recentRegression.r2 * 0.6 +
-    (recentPositiveRun / INVERSION_PERSISTENCE_POINTS) * 0.4
+    splineFit.r2 * 0.45 +
+    clamp01(r2Improvement / 0.2) * 0.25 +
+    clamp01(slopeContrast / 2.5) * 0.2 +
+    clamp01(postKnotSupport / 4) * 0.1
   );
-  
+
   return {
     inversionDetected: true,
-    inversionWeek,
+    inversionWeek: splineFit.knotWeek,
     confidence,
-    trendBeforeInversion: longTermTrend === 'decreasing' ? 'decreasing' : 'stable',
-    trendAfterInversion: 'increasing'
+    trendBeforeInversion: normalizedPreSlope < -MIN_NORMALIZED_SLOPE ? 'decreasing' : 'stable',
+    trendAfterInversion: normalizedPostSlope > MIN_NORMALIZED_SLOPE ? 'increasing' : 'stable'
   };
 }
 
@@ -630,6 +665,154 @@ function getPositiveRunLength(points: SmoothedPoint[]): number {
   return run;
 }
 
+function fitLinearTrend(points: WeeklySplinePoint[]): LinearFit {
+  if (points.length < 2) {
+    return { intercept: 0, slope: 0, r2: 0 };
+  }
+
+  const regression = ss.linearRegression(
+    points.map((point) => [point.gestationalWeek, point.averageHRV] as [number, number])
+  );
+  const line = ss.linearRegressionLine(regression);
+  const r2 = ss.rSquared(
+    points.map((point) => [point.gestationalWeek, point.averageHRV] as [number, number]),
+    line
+  );
+
+  return {
+    intercept: regression.b,
+    slope: regression.m,
+    r2: Number.isFinite(r2) ? r2 : 0,
+  };
+}
+
+function findBestSplineFit(points: WeeklySplinePoint[]): SplineFit | null {
+  if (points.length < MIN_WEEKS_FOR_SPLINE_MODEL) {
+    return null;
+  }
+
+  let bestFit: SplineFit | null = null;
+
+  for (
+    let knotIndex = MIN_WEEKS_PER_SPLINE_SIDE;
+    knotIndex <= points.length - MIN_WEEKS_PER_SPLINE_SIDE - 1;
+    knotIndex++
+  ) {
+    const knotWeek = points[knotIndex].gestationalWeek;
+    const fit = fitBrokenStickSpline(points, knotWeek);
+
+    if (!fit) {
+      continue;
+    }
+
+    if (!bestFit || fit.r2 > bestFit.r2) {
+      bestFit = fit;
+    }
+  }
+
+  return bestFit;
+}
+
+function fitBrokenStickSpline(
+  points: WeeklySplinePoint[],
+  knotWeek: number
+): SplineFit | null {
+  if (points.length < MIN_WEEKS_FOR_SPLINE_MODEL) {
+    return null;
+  }
+
+  const matrix = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  const vector = [0, 0, 0];
+
+  for (const point of points) {
+    const x = point.gestationalWeek;
+    const hinge = Math.max(0, x - knotWeek);
+    const weight = point.readingCount;
+    const row = [1, x, hinge];
+
+    for (let i = 0; i < row.length; i++) {
+      for (let j = 0; j < row.length; j++) {
+        matrix[i][j] += weight * row[i] * row[j];
+      }
+      vector[i] += weight * row[i] * point.averageHRV;
+    }
+  }
+
+  const coefficients = solve3x3(matrix, vector);
+
+  if (!coefficients) {
+    return null;
+  }
+
+  const [intercept, slope, hingeSlopeDelta] = coefficients;
+  const line = (week: number) => intercept + slope * week + hingeSlopeDelta * Math.max(0, week - knotWeek);
+  const fittedValues = points.map((point) => line(point.gestationalWeek));
+  const pairs = points.map((point) => [point.gestationalWeek, point.averageHRV] as [number, number]);
+  const r2 = ss.rSquared(pairs, line);
+
+  return {
+    intercept,
+    slope,
+    r2: Number.isFinite(r2) ? r2 : 0,
+    knotWeek,
+    hingeSlopeDelta,
+    postKnotSlope: slope + hingeSlopeDelta,
+    fittedValues,
+  };
+}
+
+function solve3x3(matrix: number[][], vector: number[]): [number, number, number] | null {
+  const augmented = matrix.map((row, index) => [...row, vector[index]]);
+
+  for (let pivotIndex = 0; pivotIndex < 3; pivotIndex++) {
+    let maxRowIndex = pivotIndex;
+
+    for (let rowIndex = pivotIndex + 1; rowIndex < 3; rowIndex++) {
+      if (Math.abs(augmented[rowIndex][pivotIndex]) > Math.abs(augmented[maxRowIndex][pivotIndex])) {
+        maxRowIndex = rowIndex;
+      }
+    }
+
+    if (Math.abs(augmented[maxRowIndex][pivotIndex]) < 1e-8) {
+      return null;
+    }
+
+    if (maxRowIndex !== pivotIndex) {
+      const currentRow = augmented[pivotIndex];
+      augmented[pivotIndex] = augmented[maxRowIndex];
+      augmented[maxRowIndex] = currentRow;
+    }
+
+    const pivot = augmented[pivotIndex][pivotIndex];
+
+    for (let columnIndex = pivotIndex; columnIndex < 4; columnIndex++) {
+      augmented[pivotIndex][columnIndex] /= pivot;
+    }
+
+    for (let rowIndex = 0; rowIndex < 3; rowIndex++) {
+      if (rowIndex === pivotIndex) {
+        continue;
+      }
+
+      const factor = augmented[rowIndex][pivotIndex];
+
+      for (let columnIndex = pivotIndex; columnIndex < 4; columnIndex++) {
+        augmented[rowIndex][columnIndex] -= factor * augmented[pivotIndex][columnIndex];
+      }
+    }
+  }
+
+  return [
+    augmented[0][3],
+    augmented[1][3],
+    augmented[2][3],
+  ];
+}
+
 function normalizeSlope(slope: number, mean: number): number {
   if (mean === 0) return slope;
   return slope / Math.abs(mean);
@@ -641,16 +824,12 @@ function clamp01(value: number): number {
 
 function computeMean(values: number[]): number {
   if (values.length === 0) return 0;
-  return values.reduce((sum, v) => sum + v, 0) / values.length;
+  return ss.mean(values);
 }
 
 function computeStandardDeviation(values: number[]): number {
   if (values.length < 2) return 0;
-  const mean = computeMean(values);
-  const variance =
-    values.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) /
-    (values.length - 1);
-  return Math.sqrt(variance);
+  return ss.sampleStandardDeviation(values);
 }
 
 function roundToNearestHalf(value: number): number {
@@ -669,6 +848,10 @@ export const __testables = {
   computeRegression,
   slopeToTrend,
   getPositiveRunLength,
+  fitLinearTrend,
+  findBestSplineFit,
+  fitBrokenStickSpline,
+  solve3x3,
   normalizeSlope,
   computeMean,
   computeStandardDeviation,

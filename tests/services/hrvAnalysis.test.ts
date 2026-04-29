@@ -172,6 +172,31 @@ describe('Story 402 - prediction confidence intervals', () => {
   });
 });
 
+describe('Story 406 - spline inversion model', () => {
+  it('finds the spline knot near the observed HRV turnaround week', () => {
+    const weeklyReadings = buildReadings(
+      [140, 132, 124, 116, 108, 100, 92, 84, 76, 68, 60, 62, 68, 76, 86, 98],
+      20
+    );
+
+    const inversion = __testables.detectInversion(weeklyReadings);
+    const spline = __testables.findBestSplineFit(
+      calculateWeeklyAverages(weeklyReadings).map((aggregate) => ({
+        gestationalWeek: aggregate.gestationalWeek,
+        averageHRV: aggregate.averageHRV,
+        readingCount: aggregate.readingCount,
+      }))
+    );
+
+    expect(spline).not.toBeNull();
+    expect(spline?.slope).toBeLessThan(0);
+    expect(spline?.postKnotSlope).toBeGreaterThan(0);
+    expect(inversion.inversionDetected).toBe(true);
+    expect(inversion.inversionWeek).toBeGreaterThanOrEqual(30);
+    expect(inversion.inversionWeek).toBeLessThanOrEqual(32);
+  });
+});
+
 /**
  * @brief Tests for summary string formatting.
  */
