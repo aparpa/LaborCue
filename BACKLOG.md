@@ -103,8 +103,8 @@ This document organizes all development tasks into an Agile-style backlog with e
 
 | Story ID | Title | Points | Priority | File | Assignee |
 |----------|-------|--------|----------|------|----------|
-| STORY-501 | Data encryption at rest | 5 | High | `storage.ts` | |
-| STORY-1108 | Account deletion flow | 2 | High | `SettingsScreen.tsx` | |
+| STORY-501 | Data encryption at rest | 5 | High | `storage.ts` | Leah|
+| STORY-1108 | Account deletion flow | 2 | High | `SettingsScreen.tsx` |Emma |
 | STORY-1103 | Privacy policy links | 1 | High | `SettingsScreen.tsx` | |
 | STORY-502 | Cloud backup functionality | 8 | Medium | `storage.ts` |Roshni|
 | STORY-1106 | Manual backup/restore | 5 | Medium | `SettingsScreen.tsx` | |
