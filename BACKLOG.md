@@ -120,7 +120,7 @@ This document organizes all development tasks into an Agile-style backlog with e
 | STORY-1105 | Theme selection UI | 3 | Low | `SettingsScreen.tsx` | |
 | STORY-907 | Pregnancy milestone celebrations | 2 | Low | `HomeScreen.tsx` | |
 | STORY-303 | Pregnancy milestone calculator | 2 | Low | `dateUtils.ts` | |
-| STORY-1006 | Data point annotations | 3 | Low | `DataScreen.tsx` | |
+| STORY-1006 | Data point annotations | 3 | Low | `DataScreen.tsx` | Leah |
 | STORY-906 | Quick action buttons | 2 | Low | `HomeScreen.tsx` | |
 | STORY-703 | Screen transition animations | 2 | Low | `AppNavigator.tsx` | |
 | STORY-701 | Deep linking support | 3 | Low | `AppNavigator.tsx` | |
