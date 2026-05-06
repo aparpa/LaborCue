@@ -7,7 +7,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-var-requires */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import renderer from 'react-test-renderer';
 import DataScreen, { __testables } from '../../src/screens/DataScreen';
 import type { HRVAnalysisResult, HRVReading } from '../../src/types';
@@ -16,6 +15,7 @@ import { InversionStatus } from '../../src/types';
 jest.mock('../../src/services/storage', () => ({
   exportDataAsCSV: jest.fn(),
   exportDataAsJSON: jest.fn(),
+  updateHRVReadingNotes: jest.fn(),
 }));
 
 const mockWriteAsStringAsync = jest.fn();
@@ -33,6 +33,7 @@ jest.mock('react-native', () => {
     ScrollView: (props: any) => React.createElement('scrollview', props, props.children),
     TouchableOpacity: (props: any) =>
       React.createElement('touchableopacity', props, props.children),
+    TextInput: (props: any) => React.createElement('textinput', props, props.children),
     Dimensions: { get: () => ({ width: 400, height: 800 }) },
     StyleSheet: {
       create: (styles: any) => styles,
@@ -85,21 +86,36 @@ jest.mock('expo-sqlite', () => ({}));
 
 // Capture what the chart decorator renders so we can assert on the SVG label.
 jest.mock('react-native-chart-kit', () => {
+  const React = require('react');
   return {
-    LineChart: ({ decorator }: any) => {
+    LineChart: ({ decorator, onDataPointClick }: any) => {
       const x = (index: number) => index * 10;
       const y = (value: number) => value * 2;
       const element = decorator?.({ x, y, width: 320, height: 200 });
-      return element || null;
+      return React.createElement(
+        'view',
+        null,
+        React.createElement(
+          'touchableopacity',
+          { onPress: () => onDataPointClick?.({ index: 0 }) },
+          React.createElement('text', null, 'Mock Data Point')
+        ),
+        element || null
+      );
     },
   };
 });
 
 // Mock user context to inject readings and analysis result
 const mockUseUser = jest.fn();
+const mockRefreshData = jest.fn();
 jest.mock('../../src/context/UserContext', () => ({
   useUser: () => mockUseUser(),
 }));
+
+const storageMock = jest.requireMock('../../src/services/storage') as {
+  updateHRVReadingNotes: jest.Mock;
+};
 
 const makeReadings = (count: number, startWeek: number): HRVReading[] =>
   Array.from({ length: count }, (_, i) => ({
@@ -110,6 +126,62 @@ const makeReadings = (count: number, startWeek: number): HRVReading[] =>
     gestationalDay: i % 7,
     source: 'manual',
   }));
+
+function getNodeText(node: renderer.ReactTestInstance): string {
+  const children = node.props.children;
+
+  if (typeof children === 'string') {
+    return children;
+  }
+
+  if (Array.isArray(children)) {
+    return children
+      .map((child) => {
+        if (typeof child === 'string') {
+          return child;
+        }
+        return React.isValidElement(child) ? '' : '';
+      })
+      .join('');
+  }
+
+  return '';
+}
+
+function findTouchableByText(
+  tree: renderer.ReactTestRenderer,
+  label: string
+): renderer.ReactTestInstance {
+  const matches = tree.root.findAll((node) =>
+    node.type === 'touchableopacity' &&
+    node.findAll((child) => child.type === 'text' && getNodeText(child) === label).length > 0
+  );
+
+  if (matches.length === 0) {
+    throw new Error(`Touchable with label "${label}" not found`);
+  }
+
+  return matches[0];
+}
+
+function findInputByPlaceholder(
+  tree: renderer.ReactTestRenderer,
+  placeholder: string
+): renderer.ReactTestInstance {
+  const matches = tree.root.findAll(
+    (node) => node.type === 'textinput' && node.props.placeholder === placeholder
+  );
+
+  if (matches.length === 0) {
+    throw new Error(`TextInput with placeholder "${placeholder}" not found`);
+  }
+
+  return matches[0];
+}
+
+function hasText(tree: renderer.ReactTestRenderer, label: string): boolean {
+  return tree.root.findAll((node) => node.type === 'text' && getNodeText(node) === label).length > 0;
+}
 
 describe('DataScreen inflection marker (STORY-1003)', () => {
   function renderDataScreen(): renderer.ReactTestRenderer {
@@ -126,6 +198,7 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
     mockWriteAsStringAsync.mockResolvedValue(undefined);
     mockShareAsync.mockResolvedValue(undefined);
     mockShare.mockResolvedValue(undefined);
+    mockRefreshData.mockResolvedValue(undefined);
   });
 
   it('renders the inflection marker when inversion is within the displayed readings', () => {
@@ -148,6 +221,7 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
       hrvReadings: readings,
       analysisResult,
       currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+      refreshData: mockRefreshData,
     });
 
     const tree = renderDataScreen();
@@ -177,6 +251,7 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
         message: 'No inversion',
       },
       currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+      refreshData: mockRefreshData,
     });
 
     const tree = renderDataScreen();
@@ -197,15 +272,19 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
         message: 'Stable trend',
       },
       currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+      refreshData: mockRefreshData,
     });
 
-    render(React.createElement(DataScreen, null));
-
-    fireEvent.press(screen.getByText('Share Chart Image'));
-
-    await waitFor(() => {
-      expect(mockWriteAsStringAsync).toHaveBeenCalledTimes(1);
+    let tree: renderer.ReactTestRenderer;
+    renderer.act(() => {
+      tree = renderer.create(React.createElement(DataScreen, null));
     });
+
+    await renderer.act(async () => {
+      findTouchableByText(tree!, 'Share Chart Image').props.onPress();
+    });
+
+    expect(mockWriteAsStringAsync).toHaveBeenCalledTimes(1);
     expect(mockWriteAsStringAsync.mock.calls[0][0]).toContain('file:///cache/labor-cue-chart-');
     expect(mockWriteAsStringAsync.mock.calls[0][1]).toContain('<svg');
     expect(mockWriteAsStringAsync.mock.calls[0][1]).toContain('Labor Cue HRV Chart');
@@ -232,15 +311,19 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
         message: 'Stable trend',
       },
       currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+      refreshData: mockRefreshData,
     });
 
-    render(React.createElement(DataScreen, null));
-
-    fireEvent.press(screen.getByText('Share Chart Image'));
-
-    await waitFor(() => {
-      expect(mockWriteAsStringAsync).toHaveBeenCalledTimes(1);
+    let tree: renderer.ReactTestRenderer;
+    renderer.act(() => {
+      tree = renderer.create(React.createElement(DataScreen, null));
     });
+
+    await renderer.act(async () => {
+      findTouchableByText(tree!, 'Share Chart Image').props.onPress();
+    });
+
+    expect(mockWriteAsStringAsync).toHaveBeenCalledTimes(1);
     expect(mockShareAsync).not.toHaveBeenCalled();
     expect(mockShare).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -249,6 +332,69 @@ describe('DataScreen inflection marker (STORY-1003)', () => {
         url: expect.stringContaining('file:///cache/labor-cue-chart-'),
       })
     );
+  });
+
+  it('saves an annotation for the selected data point', async () => {
+    const readings = makeReadings(4, 28);
+
+    mockUseUser.mockReturnValue({
+      hrvReadings: readings,
+      analysisResult: null,
+      currentGestationalWeek: readings[readings.length - 1].gestationalWeek,
+      refreshData: mockRefreshData,
+    });
+
+    let tree: renderer.ReactTestRenderer;
+    renderer.act(() => {
+      tree = renderer.create(React.createElement(DataScreen, null));
+    });
+
+    renderer.act(() => {
+      findTouchableByText(tree!, 'Mock Data Point').props.onPress();
+    });
+    renderer.act(() => {
+      findInputByPlaceholder(tree!, 'Add a note for this data point').props.onChangeText('  slept badly  ');
+    });
+    await renderer.act(async () => {
+      findTouchableByText(tree!, 'Save Note').props.onPress();
+    });
+
+    expect(storageMock.updateHRVReadingNotes).toHaveBeenCalledWith(readings[0].id, 'slept badly');
+    expect(mockRefreshData).toHaveBeenCalled();
+    expect(hasText(tree!, 'Note saved.')).toBe(true);
+    expect(hasText(tree!, 'slept badly')).toBe(true);
+  });
+
+  it('removes an existing annotation for the selected data point', async () => {
+    const readings: HRVReading[] = [
+      {
+        ...makeReadings(1, 28)[0],
+        metadata: { notes: 'feeling stressed' },
+      },
+    ];
+
+    mockUseUser.mockReturnValue({
+      hrvReadings: readings,
+      analysisResult: null,
+      currentGestationalWeek: readings[0].gestationalWeek,
+      refreshData: mockRefreshData,
+    });
+
+    let tree: renderer.ReactTestRenderer;
+    renderer.act(() => {
+      tree = renderer.create(React.createElement(DataScreen, null));
+    });
+
+    renderer.act(() => {
+      findTouchableByText(tree!, 'Mock Data Point').props.onPress();
+    });
+    await renderer.act(async () => {
+      findTouchableByText(tree!, 'Remove Note').props.onPress();
+    });
+
+    expect(storageMock.updateHRVReadingNotes).toHaveBeenCalledWith(readings[0].id, null);
+    expect(mockRefreshData).toHaveBeenCalled();
+    expect(hasText(tree!, 'feeling stressed')).toBe(false);
   });
 });
 
