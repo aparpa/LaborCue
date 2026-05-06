@@ -79,12 +79,120 @@ import {
   Switch,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useUser } from '../context/UserContext';
-import { clearAllData, saveHRVReading } from '../services/storage';
+import {
+  clearAllData,
+  deleteAllHRVReadings,
+  getLastSyncTime,
+  loadAppSettings,
+  saveAppSettings,
+  saveHRVReading,
+  saveMultipleHRVReadings,
+  saveUserProfile,
+} from '../services/storage';
 import { formatDate, formatGestationalAge } from '../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants';
-import type { HRVReading } from '../types';
+import { StorageKeys } from '../types';
+import type { AppSettings, HRVReading, UserProfile } from '../types';
+
+type BackupPayload = {
+  version: 1;
+  exportedAt: string;
+  profile: UserProfile | null;
+  settings: AppSettings;
+  lastSync: string | null;
+  readings: HRVReading[];
+};
+
+type FileSystemModule = {
+  cacheDirectory?: string | null;
+  documentDirectory?: string | null;
+  writeAsStringAsync: (
+    uri: string,
+    contents: string,
+    options?: { encoding?: string }
+  ) => Promise<void>;
+  readAsStringAsync: (
+    uri: string,
+    options?: { encoding?: string }
+  ) => Promise<string>;
+  EncodingType?: { UTF8?: string };
+};
+
+type SharingModule = {
+  isAvailableAsync: () => Promise<boolean>;
+  shareAsync: (
+    uri: string,
+    options?: { mimeType?: string; dialogTitle?: string; UTI?: string }
+  ) => Promise<void>;
+};
+
+type DocumentPickerResult =
+  | { canceled: true; assets?: undefined }
+  | {
+      canceled: false;
+      assets: Array<{ uri: string; name?: string }>;
+    };
+
+type DocumentPickerModule = {
+  getDocumentAsync: (options?: {
+    type?: string | string[];
+    copyToCacheDirectory?: boolean;
+    multiple?: boolean;
+  }) => Promise<DocumentPickerResult>;
+};
+
+declare const require: (moduleName: string) => unknown;
+
+function getFileSystemModule(): FileSystemModule {
+  return require('expo-file-system') as FileSystemModule;
+}
+
+function getSharingModule(): SharingModule {
+  return require('expo-sharing') as SharingModule;
+}
+
+function getDocumentPickerModule(): DocumentPickerModule {
+  return require('expo-document-picker') as DocumentPickerModule;
+}
+
+function getBackupFileName(uri: string): string {
+  const parts = uri.split('/');
+  return parts[parts.length - 1] || 'labor-cue-backup.json';
+}
+
+export function createManualBackupPayload(
+  profile: UserProfile | null,
+  settings: AppSettings,
+  lastSync: string | null,
+  readings: HRVReading[]
+): BackupPayload {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    profile,
+    settings,
+    lastSync,
+    readings,
+  };
+}
+
+function isBackupPayload(value: unknown): value is BackupPayload {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<BackupPayload>;
+  return (
+    candidate.version === 1 &&
+    typeof candidate.exportedAt === 'string' &&
+    Array.isArray(candidate.readings) &&
+    typeof candidate.settings === 'object' &&
+    candidate.settings !== null
+  );
+}
 
 export default function SettingsScreen(): React.JSX.Element {
   const {
@@ -99,6 +207,9 @@ export default function SettingsScreen(): React.JSX.Element {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
   
   // Handle name edit
   const handleSaveName = async () => {
@@ -163,6 +274,112 @@ export default function SettingsScreen(): React.JSX.Element {
         },
       ]
     );
+  };
+
+  const handleCreateBackup = async () => {
+    setIsBackingUp(true);
+
+    try {
+      const [settings, lastSync] = await Promise.all([
+        loadAppSettings(),
+        getLastSyncTime(),
+      ]);
+      const payload = createManualBackupPayload(profile ?? null, settings, lastSync, hrvReadings);
+      const fileSystem = getFileSystemModule();
+      const sharing = getSharingModule();
+      const directory = fileSystem.cacheDirectory || fileSystem.documentDirectory;
+
+      if (!directory) {
+        throw new Error('Backup directory unavailable.');
+      }
+
+      const backupUri = `${directory}labor-cue-backup-${Date.now()}.json`;
+      await fileSystem.writeAsStringAsync(backupUri, JSON.stringify(payload, null, 2), {
+        encoding: fileSystem.EncodingType?.UTF8,
+      });
+
+      const canShare = await sharing.isAvailableAsync();
+      if (!canShare) {
+        throw new Error('Backup sharing unavailable.');
+      }
+
+      await sharing.shareAsync(backupUri, {
+        mimeType: 'application/json',
+        dialogTitle: 'Save backup file',
+        UTI: 'public.json',
+      });
+
+      setBackupStatusMessage('Backup file ready to save to Files, iCloud Drive, or Google Drive.');
+      Alert.alert('Backup Ready', 'Your backup file is ready to save or share.');
+    } catch (error) {
+      console.error('Failed to create backup:', error);
+      setBackupStatusMessage('Backup failed. Please try again.');
+      Alert.alert('Backup Failed', 'Unable to create a backup file.');
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestoreBackup = async () => {
+    setIsRestoring(true);
+
+    try {
+      const documentPicker = getDocumentPickerModule();
+      const fileSystem = getFileSystemModule();
+      const selection = await documentPicker.getDocumentAsync({
+        type: ['application/json', 'text/json'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (selection.canceled) {
+        setBackupStatusMessage('Restore canceled.');
+        return;
+      }
+
+      const asset = selection.assets[0];
+      const raw = await fileSystem.readAsStringAsync(asset.uri, {
+        encoding: fileSystem.EncodingType?.UTF8,
+      });
+      const parsed = JSON.parse(raw) as unknown;
+
+      if (!isBackupPayload(parsed)) {
+        throw new Error('Invalid backup file.');
+      }
+
+      await deleteAllHRVReadings();
+
+      if (parsed.profile) {
+        await saveUserProfile(parsed.profile);
+        await setProfile(parsed.profile);
+      }
+
+      await saveAppSettings(parsed.settings);
+
+      if (parsed.lastSync) {
+        await AsyncStorage.setItem(StorageKeys.LAST_SYNC, parsed.lastSync);
+      } else {
+        await AsyncStorage.removeItem(StorageKeys.LAST_SYNC);
+      }
+
+      if (parsed.readings.length > 0) {
+        await saveMultipleHRVReadings(
+          parsed.readings.map(({ id: _id, ...reading }) => reading)
+        );
+      }
+
+      await refreshData();
+      setBackupStatusMessage(
+        `Restored ${parsed.readings.length} readings from ${asset.name || getBackupFileName(asset.uri)}.`
+      );
+      Alert.alert('Restore Complete', 'Your backup file has been restored.');
+    } catch (error) {
+      console.error('Failed to restore backup:', error);
+      setBackupStatusMessage('Restore failed. Please choose a valid backup file.');
+      Alert.alert('Restore Failed', 'Unable to restore from that backup file.');
+    } finally {
+      setIsRestoring(false);
+    }
   };
   
   return (
@@ -263,7 +480,36 @@ export default function SettingsScreen(): React.JSX.Element {
           <Text style={styles.actionButtonText}>Add Sample Test Data</Text>
           <Text style={styles.actionButtonSubtext}>For testing purposes</Text>
         </TouchableOpacity>
-        {/* STORY-1106 start: add backup/restore controls here. */}
+        <View style={styles.backupCard}>
+          <Text style={styles.backupTitle}>Manual Backup & Restore</Text>
+          <Text style={styles.backupDescription}>
+            Create a backup file you can save to your device, iCloud Drive, or Google Drive,
+            then restore from that file later.
+          </Text>
+          <View style={styles.backupActions}>
+            <TouchableOpacity
+              style={[styles.backupButton, isBackingUp && styles.actionButtonDisabled]}
+              onPress={handleCreateBackup}
+              disabled={isBackingUp || isRestoring}
+            >
+              <Text style={styles.backupButtonText}>
+                {isBackingUp ? 'Creating Backup...' : 'Create Backup File'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.backupButtonSecondary, isRestoring && styles.actionButtonDisabled]}
+              onPress={handleRestoreBackup}
+              disabled={isBackingUp || isRestoring}
+            >
+              <Text style={styles.backupButtonSecondaryText}>
+                {isRestoring ? 'Restoring...' : 'Restore Backup'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {backupStatusMessage ? (
+            <Text style={styles.backupStatus}>{backupStatusMessage}</Text>
+          ) : null}
+        </View>
         
         {/* Clear Data */}
         <TouchableOpacity
@@ -415,11 +661,65 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     fontWeight: '500',
   },
+  backupCard: {
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.lg,
+    marginTop: SPACING.md,
+  },
+  backupTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  backupDescription: {
+    marginTop: SPACING.xs,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  backupActions: {
+    marginTop: SPACING.md,
+    gap: SPACING.sm,
+  },
+  backupButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
+  backupButtonText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+  },
+  backupButtonSecondary: {
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
+  backupButtonSecondaryText: {
+    color: COLORS.primary,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+  },
+  backupStatus: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
   actionButton: {
     backgroundColor: COLORS.backgroundSecondary,
     borderRadius: BORDER_RADIUS.md,
     padding: SPACING.lg,
     marginTop: SPACING.md,
+  },
+  actionButtonDisabled: {
+    opacity: 0.6,
   },
   actionButtonText: {
     fontSize: FONT_SIZES.md,
@@ -468,3 +768,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 });
+
+export const __testables = {
+  createManualBackupPayload,
+};
