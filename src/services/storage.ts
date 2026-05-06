@@ -361,6 +361,49 @@ export async function deleteHRVReading(id: string): Promise<void> {
 }
 
 /**
+ * Update the note metadata for an existing HRV reading.
+ */
+export async function updateHRVReadingNotes(
+  id: string,
+  notes: string | null
+): Promise<void> {
+  const database = await getDatabase();
+
+  try {
+    const existing = await database.getFirstAsync<{ metadata: string | null }>(
+      'SELECT metadata FROM hrv_readings WHERE id = ?',
+      [id]
+    );
+
+    if (!existing) {
+      throw new Error(`HRV reading not found: ${id}`);
+    }
+
+    const metadata = existing.metadata
+      ? JSON.parse(existing.metadata) as HRVReading['metadata']
+      : {};
+
+    if (notes) {
+      metadata.notes = notes;
+    } else {
+      delete metadata.notes;
+    }
+
+    const nextMetadata = Object.keys(metadata).length > 0
+      ? JSON.stringify(metadata)
+      : null;
+
+    await database.runAsync(
+      'UPDATE hrv_readings SET metadata = ? WHERE id = ?',
+      [nextMetadata, id]
+    );
+  } catch (error) {
+    console.error('Failed to update HRV reading notes:', error);
+    throw error;
+  }
+}
+
+/**
  * Delete all HRV readings (for data reset)
  */
 export async function deleteAllHRVReadings(): Promise<void> {

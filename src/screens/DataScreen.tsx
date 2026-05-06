@@ -68,7 +68,7 @@
  * =============================================================================
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -78,6 +78,7 @@ import {
   Dimensions,
   Alert,
   Share,
+  TextInput,
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import {
@@ -98,7 +99,7 @@ import {
   getVisibleReadings,
   getWindowSize,
 } from '../utils/chartWindow';
-import { exportDataAsCSV, exportDataAsJSON } from '../services/storage';
+import { exportDataAsCSV, exportDataAsJSON, updateHRVReadingNotes } from '../services/storage';
 import { calculateWeeklyAverages } from '../services/hrvAnalysis';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, CHART_CONFIG } from '../constants';
 import type { HRVReading, HRVAnalysisResult } from '../types';
@@ -141,15 +142,32 @@ function getSharingApi(): SharingModule {
   return module.shareAsync ? module : (module.default ?? {});
 }
 
+function removeNotesMetadata(metadata?: HRVReading['metadata']): HRVReading['metadata'] | undefined {
+  if (!metadata) {
+    return undefined;
+  }
+
+  const nextMetadata: NonNullable<HRVReading['metadata']> = { ...metadata };
+  delete nextMetadata.notes;
+  return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
+}
+
 export default function DataScreen(): React.JSX.Element {
-  const { hrvReadings, analysisResult, currentGestationalWeek } = useUser();
+  const { hrvReadings, analysisResult, currentGestationalWeek, refreshData } = useUser();
   const [selectedPoint, setSelectedPoint] = useState<HRVReading | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState(0);
   const [chartWidth, setChartWidth] = useState(screenWidth - SPACING.lg * 2);
+  const [annotationDraft, setAnnotationDraft] = useState('');
+  const [annotationFeedback, setAnnotationFeedback] = useState<string | null>(null);
+  const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
   // STORY-1004 start: add date range filter state here.
-  // STORY-1006 start: add annotation draft state here.
+
+  useEffect(() => {
+    setAnnotationDraft(selectedPoint?.metadata?.notes ?? '');
+    setAnnotationFeedback(null);
+  }, [selectedPoint]);
   
   // Prepare chart data
   const windowSize = useMemo(
@@ -244,6 +262,68 @@ export default function DataScreen(): React.JSX.Element {
     setZoomLevel(1);
     setPanOffset(0);
   }, []);
+
+  const handleSaveAnnotation = useCallback(async () => {
+    if (!selectedPoint) {
+      return;
+    }
+
+    const trimmedNote = annotationDraft.trim();
+    setIsSavingAnnotation(true);
+    setAnnotationFeedback(null);
+
+    try {
+      await updateHRVReadingNotes(selectedPoint.id, trimmedNote || null);
+
+      const nextMetadata: NonNullable<HRVReading['metadata']> = {
+        ...(selectedPoint.metadata ?? {}),
+      };
+      if (trimmedNote) {
+        nextMetadata.notes = trimmedNote;
+      } else {
+        delete nextMetadata.notes;
+      }
+
+      setSelectedPoint({
+        ...selectedPoint,
+        metadata: Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined,
+      });
+      setAnnotationDraft(trimmedNote);
+      setAnnotationFeedback(trimmedNote ? 'Note saved.' : 'Note removed.');
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to save annotation:', error);
+      setAnnotationFeedback('Unable to save note right now.');
+    } finally {
+      setIsSavingAnnotation(false);
+    }
+  }, [annotationDraft, refreshData, selectedPoint]);
+
+  const handleRemoveAnnotation = useCallback(async () => {
+    if (!selectedPoint) {
+      return;
+    }
+
+    setAnnotationDraft('');
+    setIsSavingAnnotation(true);
+    setAnnotationFeedback(null);
+
+    try {
+      await updateHRVReadingNotes(selectedPoint.id, null);
+      setSelectedPoint({
+        ...selectedPoint,
+        metadata: removeNotesMetadata(selectedPoint.metadata),
+      });
+      setAnnotationFeedback('Note removed.');
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to remove annotation:', error);
+      setAnnotationDraft(selectedPoint.metadata?.notes ?? '');
+      setAnnotationFeedback('Unable to save note right now.');
+    } finally {
+      setIsSavingAnnotation(false);
+    }
+  }, [refreshData, selectedPoint]);
   
   // Show empty state if no data
   if (hrvReadings.length === 0) {
@@ -394,8 +474,69 @@ export default function DataScreen(): React.JSX.Element {
                   {selectedPoint.source.charAt(0).toUpperCase() + selectedPoint.source.slice(1)}
                 </Text>
               </View>
+              {selectedPoint.metadata?.notes ? (
+                <View style={styles.annotationSummary}>
+                  <Text style={styles.annotationSummaryLabel}>Saved note</Text>
+                  <Text style={styles.annotationSummaryText}>{selectedPoint.metadata.notes}</Text>
+                </View>
+              ) : null}
             </View>
-            {/* STORY-1006 start: add annotation editor for this data point here. */}
+            <View style={styles.annotationSection}>
+              <Text style={styles.annotationTitle}>Data annotation</Text>
+              <Text style={styles.annotationHint}>
+                Add context like stress, sleep, or symptoms for this reading.
+              </Text>
+              <TextInput
+                style={styles.annotationInput}
+                value={annotationDraft}
+                onChangeText={setAnnotationDraft}
+                placeholder="Add a note for this data point"
+                placeholderTextColor={COLORS.textSecondary}
+                multiline
+                textAlignVertical="top"
+                editable={!isSavingAnnotation}
+              />
+              {annotationFeedback ? (
+                <Text
+                  style={[
+                    styles.annotationFeedback,
+                    annotationFeedback.includes('Unable') && styles.annotationFeedbackError,
+                  ]}
+                >
+                  {annotationFeedback}
+                </Text>
+              ) : null}
+              <View style={styles.annotationActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.annotationButton,
+                    styles.annotationButtonPrimary,
+                    isSavingAnnotation && styles.exportButtonDisabled,
+                  ]}
+                  onPress={handleSaveAnnotation}
+                  disabled={isSavingAnnotation}
+                >
+                  <Text style={styles.annotationButtonPrimaryText}>
+                    {isSavingAnnotation ? 'Saving...' : 'Save Note'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.annotationButton,
+                    styles.annotationButtonSecondary,
+                    (!selectedPoint.metadata?.notes && annotationDraft.trim().length === 0) &&
+                      styles.annotationButtonDisabled,
+                  ]}
+                  onPress={handleRemoveAnnotation}
+                  disabled={
+                    isSavingAnnotation ||
+                    (!selectedPoint.metadata?.notes && annotationDraft.trim().length === 0)
+                  }
+                >
+                  <Text style={styles.annotationButtonSecondaryText}>Remove Note</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         )}
       </View>
@@ -781,6 +922,92 @@ const styles = StyleSheet.create({
   tooltipValue: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.textPrimary,
+    fontWeight: '500',
+  },
+  annotationSummary: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  annotationSummaryLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: SPACING.xs,
+  },
+  annotationSummaryText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textPrimary,
+    lineHeight: 20,
+  },
+  annotationSection: {
+    marginTop: SPACING.lg,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  annotationTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  annotationHint: {
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.sm,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  annotationInput: {
+    minHeight: 96,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.sm,
+    backgroundColor: COLORS.background,
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZES.sm,
+  },
+  annotationFeedback: {
+    marginTop: SPACING.sm,
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.primaryDark,
+  },
+  annotationFeedbackError: {
+    color: COLORS.danger,
+  },
+  annotationActions: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  annotationButton: {
+    flex: 1,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+  },
+  annotationButtonPrimary: {
+    backgroundColor: COLORS.primary,
+  },
+  annotationButtonSecondary: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  annotationButtonDisabled: {
+    opacity: 0.5,
+  },
+  annotationButtonPrimaryText: {
+    color: COLORS.textLight,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+  },
+  annotationButtonSecondaryText: {
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.sm,
     fontWeight: '500',
   },
   table: {
