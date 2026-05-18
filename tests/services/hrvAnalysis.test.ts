@@ -35,6 +35,38 @@ const buildReadings = (
   });
 
 /**
+ * @brief Create a deterministic decline-then-rise weekly HRV pattern.
+ */
+const buildSplinePatternReadings = (
+  startWeek: number,
+  endWeek: number,
+  knotWeek: number,
+  valueAtKnot = 50,
+  preKnotSlope = -2,
+  postKnotSlope = 2
+): HRVReading[] => {
+  const values: number[] = [];
+
+  for (let week = startWeek; week <= endWeek; week++) {
+    const distanceFromKnot = week - knotWeek;
+    const value = distanceFromKnot <= 0
+      ? valueAtKnot + preKnotSlope * distanceFromKnot
+      : valueAtKnot + postKnotSlope * distanceFromKnot;
+
+    values.push(value);
+  }
+
+  return buildReadings(values, startWeek).map((reading) => ({
+    ...reading,
+    metadata: {
+      notes: 'Synthetic sample data - not real patient data',
+      isSyntheticSample: true,
+      sampleModel: 'paper_spline_v1',
+    },
+  }));
+};
+
+/**
  * @brief Tests for weekly aggregation behavior.
  */
 describe('calculateWeeklyAverages', () => {
@@ -169,6 +201,73 @@ describe('Story 402 - prediction confidence intervals', () => {
     const highMargin = __testables.getPredictionMarginWeeks(highVarianceReadings, 0.8);
 
     expect(highMargin).toBeGreaterThan(lowMargin);
+  });
+});
+
+describe('Story 406 - spline inversion model', () => {
+  it('detects the expected term spline knot without elevating risk status', () => {
+    const result = analyzeHRV(
+      buildSplinePatternReadings(24, 40, 33),
+      '2024-12-01T00:00:00.000Z'
+    );
+
+    expect(result.inversionStatus).toBe(InversionStatus.ON_TRACK);
+    expect(result.inversionDetectedAt).toBeDefined();
+    expect(result.predictedDeliveryWindow).toBeDefined();
+    expect(result.confidence).toBe('high');
+    expect(result.message).toContain('expected trajectory');
+  });
+
+  it('classifies an early spline knot as a possible inversion', () => {
+    const result = analyzeHRV(
+      buildSplinePatternReadings(24, 38, 31),
+      '2024-12-01T00:00:00.000Z'
+    );
+
+    expect(result.inversionStatus).toBe(InversionStatus.POSSIBLE_INVERSION);
+    expect(result.inversionDetectedAt).toBeDefined();
+    expect(result.predictedDeliveryWindow).toBeDefined();
+  });
+
+  it('classifies a very early spline knot as a probable inversion', () => {
+    const result = analyzeHRV(
+      buildSplinePatternReadings(24, 38, 28),
+      '2024-12-01T00:00:00.000Z'
+    );
+
+    expect(result.inversionStatus).toBe(InversionStatus.PROBABLE_INVERSION);
+    expect(result.inversionDetectedAt).toBeDefined();
+    expect(result.predictedDeliveryWindow).toBeDefined();
+  });
+
+  it('does not detect an inversion for a monotonic weekly decline', () => {
+    const readings = buildReadings(
+      [90, 88, 86, 84, 82, 80, 78, 76, 74, 72, 70, 68, 66, 64, 62, 60, 58],
+      24
+    );
+    const result = analyzeHRV(readings, '2024-12-01T00:00:00.000Z');
+
+    expect(result.inversionStatus).toBe(InversionStatus.ON_TRACK);
+    expect(result.inversionDetectedAt).toBeUndefined();
+    expect(result.predictedDeliveryWindow).toBeUndefined();
+  });
+
+  it('fits the spline knot near the true decline-then-rise week', () => {
+    const readings = buildSplinePatternReadings(24, 40, 32);
+    const weeklyAverages = calculateWeeklyAverages(readings);
+    const points = weeklyAverages.map((aggregate) => ({
+      week: aggregate.gestationalWeek,
+      value: aggregate.averageHRV,
+    }));
+
+    const model = __testables.findBestInversionSpline(points);
+
+    expect(model?.knotWeek).toBe(32);
+    expect(model?.candidateDeliveryWeek).toBe(39);
+    expect(model?.preKnotSlope).toBeLessThan(0);
+    expect(model?.postKnotSlope).toBeGreaterThan(0);
+    expect(model?.farFromBirthWeeksUntilBirthSlope).toBeGreaterThan(0);
+    expect(model?.nearBirthWeeksUntilBirthSlope).toBeLessThan(0);
   });
 });
 
