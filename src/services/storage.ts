@@ -54,7 +54,6 @@
  * =============================================================================
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SQLite from 'expo-sqlite';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -64,6 +63,125 @@ import {
   StorageKeys
 } from '../types';
 import { DATABASE_NAME, MAX_STORED_READINGS } from '../constants';
+
+const BACKUP_FORMAT_VERSION = 1;
+const DEFAULT_BACKUP_FILENAME = 'labor-cue-backup.json';
+
+type FileSystemModule = {
+  cacheDirectory?: string | null;
+  documentDirectory?: string | null;
+  writeAsStringAsync: (
+    uri: string,
+    contents: string,
+    options?: { encoding?: string }
+  ) => Promise<void>;
+  readAsStringAsync: (
+    uri: string,
+    options?: { encoding?: string }
+  ) => Promise<string>;
+  EncodingType?: {
+    UTF8?: string;
+  };
+};
+
+type SharingModule = {
+  isAvailableAsync: () => Promise<boolean>;
+  shareAsync: (
+    uri: string,
+    options?: {
+      mimeType?: string;
+      dialogTitle?: string;
+      UTI?: string;
+    }
+  ) => Promise<void>;
+};
+
+type DocumentPickerResult =
+  | {
+      canceled: true;
+      assets?: undefined;
+    }
+  | {
+      canceled: false;
+      assets: Array<{
+        uri: string;
+        name?: string;
+        mimeType?: string | null;
+      }>;
+    };
+
+type DocumentPickerModule = {
+  getDocumentAsync: (options?: {
+    type?: string | string[];
+    copyToCacheDirectory?: boolean;
+    multiple?: boolean;
+  }) => Promise<DocumentPickerResult>;
+};
+
+type AsyncStorageModule = {
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  multiRemove: (keys: string[]) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
+  default?: AsyncStorageModule;
+};
+
+export interface CloudBackupPayload {
+  version: number;
+  exportedAt: string;
+  profile: UserProfile | null;
+  settings: AppSettings;
+  lastSync: string | null;
+  readings: HRVReading[];
+}
+
+export interface CloudBackupResult {
+  fileUri: string;
+  fileName: string;
+  exportedAt: string;
+  deliveryMethod: 'share_sheet';
+}
+
+export interface CloudRestoreResult {
+  restored: boolean;
+  importedAt?: string;
+  fileName?: string;
+  readingCount?: number;
+}
+
+declare const require: (moduleName: string) => unknown;
+
+function getFileSystemModule(): FileSystemModule {
+  return require('expo-file-system') as FileSystemModule;
+}
+
+function getSharingModule(): SharingModule {
+  return require('expo-sharing') as SharingModule;
+}
+
+function getDocumentPickerModule(): DocumentPickerModule {
+  return require('expo-document-picker') as DocumentPickerModule;
+}
+
+function getAsyncStorageModule(): AsyncStorageModule {
+  const module = require('@react-native-async-storage/async-storage') as AsyncStorageModule & {
+    default?: AsyncStorageModule & { default?: AsyncStorageModule };
+  };
+
+  if (module.getItem) {
+    return module;
+  }
+
+  if (module.default?.getItem) {
+    return module.default;
+  }
+
+  if (module.default?.default?.getItem) {
+    return module.default.default;
+  }
+
+  throw new Error('AsyncStorage module is unavailable.');
+}
 
 // ============================================================================
 // DATABASE INITIALIZATION
@@ -124,11 +242,12 @@ async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 // STORY-501 start: encrypt/decrypt the user profile payload before storage.
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
   try {
+    const storage = getAsyncStorageModule();
     const updatedProfile: UserProfile = {
       ...profile,
       updatedAt: new Date().toISOString()
     };
-    await AsyncStorage.setItem(
+    await storage.setItem(
       StorageKeys.USER_PROFILE,
       JSON.stringify(updatedProfile)
     );
@@ -145,7 +264,8 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 // STORY-501 start: decrypt the stored payload before JSON.parse.
 export async function loadUserProfile(): Promise<UserProfile | null> {
   try {
-    const data = await AsyncStorage.getItem(StorageKeys.USER_PROFILE);
+    const storage = getAsyncStorageModule();
+    const data = await storage.getItem(StorageKeys.USER_PROFILE);
     if (data) {
       return JSON.parse(data) as UserProfile;
     }
@@ -434,7 +554,8 @@ const DEFAULT_SETTINGS: AppSettings = {
  */
 export async function saveAppSettings(settings: AppSettings): Promise<void> {
   try {
-    await AsyncStorage.setItem(
+    const storage = getAsyncStorageModule();
+    await storage.setItem(
       StorageKeys.APP_SETTINGS,
       JSON.stringify(settings)
     );
@@ -449,7 +570,8 @@ export async function saveAppSettings(settings: AppSettings): Promise<void> {
  */
 export async function loadAppSettings(): Promise<AppSettings> {
   try {
-    const data = await AsyncStorage.getItem(StorageKeys.APP_SETTINGS);
+    const storage = getAsyncStorageModule();
+    const data = await storage.getItem(StorageKeys.APP_SETTINGS);
     if (data) {
       return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
     }
@@ -469,7 +591,8 @@ export async function loadAppSettings(): Promise<AppSettings> {
  */
 export async function recordLastSync(): Promise<void> {
   try {
-    await AsyncStorage.setItem(
+    const storage = getAsyncStorageModule();
+    await storage.setItem(
       StorageKeys.LAST_SYNC,
       new Date().toISOString()
     );
@@ -483,7 +606,8 @@ export async function recordLastSync(): Promise<void> {
  */
 export async function getLastSyncTime(): Promise<string | null> {
   try {
-    return await AsyncStorage.getItem(StorageKeys.LAST_SYNC);
+    const storage = getAsyncStorageModule();
+    return await storage.getItem(StorageKeys.LAST_SYNC);
   } catch (error) {
     console.error('Failed to get last sync time:', error);
     return null;
@@ -530,8 +654,150 @@ export async function exportDataAsCSV(): Promise<string> {
 // STORY-506 start: add PDF export generation here, reusing the chart
 // rendering/data used on the Data screen.
 
-// STORY-502 start: add cloud backup upload/download helpers here (opt-in
-// flow, encryption, and restore).
+function getBackupDirectory(): string {
+  const fileSystem = getFileSystemModule();
+  const baseDirectory = fileSystem.cacheDirectory || fileSystem.documentDirectory;
+
+  if (!baseDirectory) {
+    throw new Error('Cloud backup directory is unavailable.');
+  }
+
+  return baseDirectory;
+}
+
+export async function createCloudBackupPayload(): Promise<CloudBackupPayload> {
+  const [profile, settings, lastSync, readings] = await Promise.all([
+    loadUserProfile(),
+    loadAppSettings(),
+    getLastSyncTime(),
+    getAllHRVReadings(),
+  ]);
+
+  return {
+    version: BACKUP_FORMAT_VERSION,
+    exportedAt: new Date().toISOString(),
+    profile,
+    settings,
+    lastSync,
+    readings,
+  };
+}
+
+export function serializeCloudBackup(payload: CloudBackupPayload): string {
+  return JSON.stringify(payload, null, 2);
+}
+
+function assertValidCloudBackupPayload(
+  payload: Partial<CloudBackupPayload>
+): asserts payload is CloudBackupPayload {
+  if (
+    typeof payload.version !== 'number' ||
+    typeof payload.exportedAt !== 'string' ||
+    !Array.isArray(payload.readings) ||
+    typeof payload.settings !== 'object' ||
+    payload.settings === null
+  ) {
+    throw new Error('Invalid cloud backup file.');
+  }
+}
+
+function getFileNameFromUri(uri: string): string {
+  const segments = uri.split('/');
+  return segments[segments.length - 1] || DEFAULT_BACKUP_FILENAME;
+}
+
+async function replaceLocalDataWithBackup(payload: CloudBackupPayload): Promise<void> {
+  const storage = getAsyncStorageModule();
+  await deleteAllHRVReadings();
+
+  if (payload.profile) {
+    await saveUserProfile(payload.profile);
+  } else {
+    await storage.removeItem(StorageKeys.USER_PROFILE);
+  }
+
+  await saveAppSettings(payload.settings);
+
+  if (payload.lastSync) {
+    await storage.setItem(StorageKeys.LAST_SYNC, payload.lastSync);
+  } else {
+    await storage.removeItem(StorageKeys.LAST_SYNC);
+  }
+
+  if (payload.readings.length > 0) {
+    await saveMultipleHRVReadings(
+      payload.readings.map(({ id: _id, ...reading }) => reading)
+    );
+  }
+}
+
+export async function backupDataToCloud(
+  options?: {
+    fileName?: string;
+    privacyAcknowledged?: boolean;
+  }
+): Promise<CloudBackupResult> {
+  if (!options?.privacyAcknowledged) {
+    throw new Error('Cloud backup requires explicit privacy acknowledgement.');
+  }
+
+  const fileSystem = getFileSystemModule();
+  const sharing = getSharingModule();
+  const payload = await createCloudBackupPayload();
+  const fileName = options.fileName || DEFAULT_BACKUP_FILENAME;
+  const fileUri = `${getBackupDirectory()}${fileName}`;
+
+  await fileSystem.writeAsStringAsync(fileUri, serializeCloudBackup(payload), {
+    encoding: fileSystem.EncodingType?.UTF8,
+  });
+
+  const canShare = await sharing.isAvailableAsync();
+  if (!canShare) {
+    throw new Error('Cloud backup sharing is unavailable on this device.');
+  }
+
+  await sharing.shareAsync(fileUri, {
+    mimeType: 'application/json',
+    dialogTitle: 'Save backup to iCloud Drive or Google Drive',
+    UTI: 'public.json',
+  });
+
+  return {
+    fileUri,
+    fileName,
+    exportedAt: payload.exportedAt,
+    deliveryMethod: 'share_sheet',
+  };
+}
+
+export async function restoreDataFromCloud(): Promise<CloudRestoreResult> {
+  const documentPicker = getDocumentPickerModule();
+  const fileSystem = getFileSystemModule();
+  const selection = await documentPicker.getDocumentAsync({
+    type: ['application/json', 'text/json'],
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+
+  if (selection.canceled) {
+    return { restored: false };
+  }
+
+  const asset = selection.assets[0];
+  const rawContents = await fileSystem.readAsStringAsync(asset.uri, {
+    encoding: fileSystem.EncodingType?.UTF8,
+  });
+  const parsed = JSON.parse(rawContents) as Partial<CloudBackupPayload>;
+  assertValidCloudBackupPayload(parsed);
+  await replaceLocalDataWithBackup(parsed);
+
+  return {
+    restored: true,
+    importedAt: new Date().toISOString(),
+    fileName: asset.name || getFileNameFromUri(asset.uri),
+    readingCount: parsed.readings.length,
+  };
+}
 
 // ============================================================================
 // RESET/CLEAR
@@ -542,8 +808,9 @@ export async function exportDataAsCSV(): Promise<string> {
  */
 export async function clearAllData(): Promise<void> {
   try {
+    const storage = getAsyncStorageModule();
     // Clear AsyncStorage
-    await AsyncStorage.multiRemove([
+    await storage.multiRemove([
       StorageKeys.USER_PROFILE,
       StorageKeys.APP_SETTINGS,
       StorageKeys.LAST_SYNC
