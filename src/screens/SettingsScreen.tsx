@@ -99,6 +99,7 @@ export default function SettingsScreen(): React.JSX.Element {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   
   // Handle name edit
   const handleSaveName = async () => {
@@ -141,24 +142,48 @@ export default function SettingsScreen(): React.JSX.Element {
     );
   };
   
-  // Handle data reset
-  const handleClearData = () => {
+  // Handle account deletion / full local data removal
+  const performAccountDeletion = async () => {
+    try {
+      setIsDeletingAccount(true);
+      await clearAllData();
+      await refreshData();
+      Alert.alert(
+        'Account Deleted',
+        'All profile data, readings, and saved settings were removed from this device.'
+      );
+    } catch (error) {
+      console.error('Failed to delete account data:', error);
+      Alert.alert('Error', 'Failed to delete account data.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
     Alert.alert(
-      'Clear All Data',
-      'This will permanently delete all your HRV data and settings. This cannot be undone.',
+      'Delete Account and Data',
+      'This permanently removes your profile, HRV readings, and saved settings from this device.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Clear Data',
+          text: 'Continue',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await clearAllData();
-              Alert.alert('Data Cleared', 'All data has been deleted. Please restart the app.');
-            } catch (error) {
-              console.error('Failed to clear data:', error);
-              Alert.alert('Error', 'Failed to clear data.');
-            }
+          onPress: () => {
+            Alert.alert(
+              'Confirm Permanent Deletion',
+              'This action cannot be undone. Delete all account data now?',
+              [
+                { text: 'Keep Data', style: 'cancel' },
+                {
+                  text: 'Delete Everything',
+                  style: 'destructive',
+                  onPress: () => {
+                    void performAccountDeletion();
+                  },
+                },
+              ]
+            );
           },
         },
       ]
@@ -265,19 +290,26 @@ export default function SettingsScreen(): React.JSX.Element {
         </TouchableOpacity>
         {/* STORY-1106 start: add backup/restore controls here. */}
         
-        {/* Clear Data */}
+        <View style={styles.deletionCard}>
+          <Text style={styles.deletionTitle}>Delete Account and Data</Text>
+          <Text style={styles.deletionDescription}>
+            Remove your profile, HRV history, and saved settings from this device.
+            This action is permanent.
+          </Text>
+        </View>
+
         <TouchableOpacity
           style={[styles.actionButton, styles.dangerButton]}
-          onPress={handleClearData}
+          onPress={handleDeleteAccount}
+          disabled={isDeletingAccount}
         >
           <Text style={[styles.actionButtonText, styles.dangerText]}>
-            Clear All Data
+            {isDeletingAccount ? 'Deleting...' : 'Delete Account and Data'}
           </Text>
           <Text style={[styles.actionButtonSubtext, styles.dangerText]}>
-            This cannot be undone
+            Permanent removal with confirmation
           </Text>
         </TouchableOpacity>
-        {/* STORY-1108 start: add account deletion flow here (confirmations). */}
       </View>
       
       {/* About Section */}
@@ -438,6 +470,25 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: COLORS.danger,
+  },
+  deletionCard: {
+    backgroundColor: COLORS.danger + '08',
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.lg,
+    marginTop: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.danger + '33',
+  },
+  deletionTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.danger,
+    marginBottom: SPACING.xs,
+  },
+  deletionDescription: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textPrimary,
+    lineHeight: 20,
   },
   aboutCard: {
     backgroundColor: COLORS.backgroundSecondary,
